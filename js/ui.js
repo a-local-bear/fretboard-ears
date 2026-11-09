@@ -2,7 +2,7 @@
 
 import {
   CHAPTERS, ROUNDS, FAMILIES, noteColor, solfegeName, letterName, keyName, keyLetter, degreeIndex,
-  chapterById, levelsFor, buildContext, pickKey,
+  chapterById, levelsFor, buildContext, pickKey, placeChapter, positionsOf, resolutionOf,
 } from './data.js';
 import { buildDeck } from './deck.js';
 import {
@@ -24,6 +24,7 @@ import { matchDegree, SHARP_NAMES } from './pitch.js';
 import { referenceFor } from './reference.js';
 
 const CORRECT_DELAY = 1100;
+const RESOLVE_STEP = 0.75; // seconds per quarter note of the resolution (80 bpm)
 const MIC_NOTE_LIMIT = 1.6; // seconds the app's notes may ring while the mic listens
 const VERTICAL_BELOW = 640;
 
@@ -39,6 +40,8 @@ const S = {
   phase: 'listen', // listen → (retry after a miss) → feedback once the right note is found
   tries: 0, // taps in the current round
   states: {}, // degree → dot state for the current round
+  posStates: {}, // 'string,fret' → dot state, for lighting one position of a note (the resolution)
+  resolution: [], // note ids of the resolution being played, shown in the feedback line
   noteAt: 0, // context time of the current mystery note
   noteMs: null, // ms from the mystery note sounding to the first tap (null if unknown)
   stats: null, // snapshot for the stats screen, taken when it opens
@@ -54,6 +57,7 @@ let app;
 let lastHTML = '';
 let timer = null;
 let resetTimer = null;
+let resolveTimers = [];
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const chapter = () => chapterById(S.chapterId);
@@ -65,7 +69,10 @@ const noteText = (d) => (S.settings.labels === 'letters' ? letterName(d, S.ctx.k
 const coloredName = (d, text = noteText(d)) => `<span class="deg" style="--c:${noteColor(d)}">${esc(text)}</span>`;
 const noteName = (d) => coloredName(d);
 const keyLabel = () => keyName(S.ctx.keyPc, S.ctx.mode);
-const clearTimer = () => { clearTimeout(timer); timer = null; };
+const clearTimer = () => {
+  clearTimeout(timer); timer = null;
+  resolveTimers.forEach(clearTimeout); resolveTimers = [];
+};
 
 // ---------- rendering ----------
 
@@ -199,7 +206,7 @@ const SCREENS = {
       </div>
       <p class="prompt">${promptText()}</p>
       ${micBar()}
-      <div class="boardwrap">${board({ states: S.states, disabled: S.phase === 'feedback' })}</div>
+      <div class="boardwrap">${board({ states: S.states, posStates: S.posStates, disabled: S.phase === 'feedback' })}</div>
       <div class="actions">
         ${btn('reference', refLabel(), 'ghost')}
         ${btn('replay', 'Replay', 'primary')}
@@ -315,6 +322,8 @@ const SCREENS = {
         <p class="hint">Cadence strums C–F–G–C. Do plays the root. Nothing is the hardest.</p>
         ${seg('refWhen', [['each', 'Every note'], ['level', 'Once per level']])}
         <p class="hint">Once per level plays it before the first note only. Hear key replays it any time.</p></section>
+      <section><h2 class="sub">Resolve to Do</h2>${seg('resolve', [['on', 'On'], ['off', 'Off']])}
+        <p class="hint">After a correct answer, hear the note walk stepwise to the nearest Do.</p></section>
       <section><h2 class="sub">Sound</h2>${seg('sound', [['guitar', 'Electric guitar'], ['synth', 'Synth']])}
         <p class="hint">Electric guitar uses recorded notes. Synth is the original plucked-string sound.</p></section>
       <section><h2 class="sub">Progress</h2>
@@ -327,9 +336,9 @@ function promptText() {
   const a = S.answers[S.answers.length - 1];
   if (S.phase === 'retry') return 'Not that one. Keep looking.';
   if (S.phase !== 'feedback' || !a) return S.mic === 'on' ? 'Which note was that? Play it or tap it.' : 'Which note was that?';
-  return a.heard === a.answered
-    ? `Yes, ${noteName(a.heard)}.`
-    : `There it is: ${noteName(a.heard)}.`;
+  const lead = a.heard === a.answered ? 'Yes, ' : 'There it is: ';
+  if (S.resolution.length > 1) return `${lead}${S.resolution.map(noteName).join(' → ')}`;
+  return `${lead}${noteName(a.heard)}.`;
 }
 
 // ---------- flow ----------
@@ -340,6 +349,8 @@ function go(screen) {
   if (screen !== 'settings') S.confirmReset = false;
   S.screen = screen;
   S.states = {};
+  S.posStates = {};
+  S.resolution = [];
   render();
   window.scrollTo(0, 0);
 }
@@ -368,6 +379,8 @@ function startRound() {
   stopAll();
   S.phase = 'listen';
   S.states = {};
+  S.posStates = {};
+  S.resolution = [];
   S.noteMs = null;
   S.noteAt = 0;
   render();
@@ -387,7 +400,7 @@ function replay() {
  * Only the first tap of a round counts. After a miss the player keeps tapping (each wrong dot
  * turns red and plays its note) until they find the right one; then the round moves on.
  */
-function answer(d, fromMic = false) {
+function answer(d, fromMic = false, pos = null) {
   if (S.phase !== 'listen' && S.phase !== 'retry') return;
   const heard = S.deck[S.round];
   const ok = d === heard;
@@ -397,6 +410,7 @@ function answer(d, fromMic = false) {
     S.noteMs = S.noteAt ? Math.max(0, Math.round((now() - S.noteAt) * 1000)) : null;
   }
   S.tries++;
+  S.resolution = [];
   stopAll();
   if (!fromMic) playNote(midiOfNote(d), now() + 0.03);
   if (ok) {
@@ -410,12 +424,46 @@ function answer(d, fromMic = false) {
       // as semitones above the tonic (heard/answered store chromatic and higher-octave notes as 8 + that).
       lid: level().id, key: S.ctx.keyPc, mode: S.ctx.mode, hs: heard, as: S.answers[S.answers.length - 1].answered,
     }]);
-    timer = setTimeout(advance, CORRECT_DELAY);
+    const wait = S.settings.resolve === 'on' ? playResolution(d, fromMic, pos) : 0;
+    timer = setTimeout(advance, CORRECT_DELAY + wait);
   } else {
     S.phase = 'retry';
     S.states = { ...S.states, [d]: 'wrong' };
   }
   render();
+}
+
+/**
+ * Play the answered note walking stepwise to the nearest Do, one quarter note per step, lighting
+ * one dot per step: the position nearest the previous one (the answered dot to start with).
+ * A tapped answer already sounded as the first note; a mic answer is the player's own, so only
+ * the steps after it are played. Returns the ms the walk adds after the answer. The notes are
+ * scheduled voices, so quietAt() keeps the mic from hearing them; advance() and stopAll() cut them.
+ */
+function playResolution(d, fromMic, pos) {
+  const path = resolutionOf(d, S.ctx.mode, S.ctx.tonic);
+  S.resolution = path;
+  if (path.length < 2 || !ensureAudio()) return 0;
+  const place = placeChapter(S.chapterId, S.ctx.keyPc);
+  let at0 = pos ? pos.split(',').map(Number) : S.ctx.positions.get(d)?.[0];
+  const t1 = now() + (fromMic ? 0.3 : 0.03 + RESOLVE_STEP);
+  path.slice(1).forEach((o, i) => {
+    const at = t1 + i * RESOLVE_STEP;
+    playNote(midiOfNote(o), at);
+    const cands = positionsOf(place, midiOfNote(o));
+    if (at0 && cands.length > 1) {
+      cands.sort((a, b) => Math.abs(a[1] - at0[1]) + Math.abs(a[0] - at0[0]) - Math.abs(b[1] - at0[1]) - Math.abs(b[0] - at0[0]));
+    }
+    const p = cands[0];
+    if (p) at0 = p;
+    const key = p && `${p[0]},${p[1]}`;
+    resolveTimers.push(setTimeout(() => {
+      S.posStates = key ? { [key]: 'playing' } : {};
+      render();
+    }, (at - now()) * 1000));
+    resolveTimers.push(setTimeout(() => { S.posStates = {}; render(); }, (at - now() + RESOLVE_STEP * 0.9) * 1000));
+  });
+  return (t1 + (path.length - 2) * RESOLVE_STEP - now()) * 1000;
 }
 
 function advance() {
@@ -442,7 +490,7 @@ function playReferenceOnly() {
   playReference(S.settings.ref === 'do' ? 'do' : 'cadence', S.ctx.tonic, S.ctx.cadence.chords);
 }
 
-function tapDot(d) {
+function tapDot(d, pos = null) {
   if (S.screen === 'explore') {
     if (!ensureAudio()) return;
     stopAll();
@@ -452,7 +500,7 @@ function tapDot(d) {
     clearTimer();
     timer = setTimeout(() => { S.states = {}; render(); }, 600);
   } else if (S.screen === 'play') {
-    answer(d);
+    answer(d, false, pos);
   }
 }
 
@@ -532,7 +580,7 @@ const ACTIONS = {
     render();
   },
   replay: () => replay(),
-  tap: (_, el) => tapDot(Number(el.dataset.degree)),
+  tap: (_, el) => tapDot(Number(el.dataset.degree), el.dataset.pos),
   retry: () => openLevel(S.level),
   next: () => {
     const n = nextLevel(S.chapterId, S.level);

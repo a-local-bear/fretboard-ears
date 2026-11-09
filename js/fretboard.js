@@ -13,9 +13,10 @@ const INLAYS = [3, 5, 7, 9, 15, 17];
  * @param {boolean} o.hidden                plain dots, no names or colours
  * @param {boolean} o.vertical
  * @param {Record<number,string>} [o.states]  note id → 'correct' | 'wrong' | 'reveal' | 'playing'
+ * @param {Record<string,string>} [o.posStates]  'string,fret' → state, overriding `states` for that one dot
  * @param {boolean} [o.disabled]
  */
-export function fretboardSVG({ dots, frame, labelOf, nameOf, hidden = false, vertical, states = {}, disabled = false }) {
+export function fretboardSVG({ dots, frame, labelOf, nameOf, hidden = false, vertical, states = {}, posStates = {}, disabled = false }) {
   const { lo, hi } = frame;
   const cells = hi - lo;
 
@@ -90,10 +91,10 @@ export function fretboardSVG({ dots, frame, labelOf, nameOf, hidden = false, ver
   // Dots
   for (const { id: d, pos: [st, f] } of dots) {
     const [x, y] = P(cellAlong(f), stringAcross(st));
-    const state = states[d] || '';
+    const state = posStates[`${st},${f}`] || states[d] || '';
     const fill = hidden ? 'var(--dot-neutral)' : noteColor(d);
     const text = hidden ? '' : labelOf(d);
-    s += `<g class="dot ${state}${hidden ? ' neutral' : ''}" data-action="tap" data-degree="${d}" transform="translate(${fnum(x)} ${fnum(y)})" style="--c:${fill}"` +
+    s += `<g class="dot ${state}${hidden ? ' neutral' : ''}" data-action="tap" data-degree="${d}" data-pos="${st},${f}" transform="translate(${fnum(x)} ${fnum(y)})" style="--c:${fill}"` +
       ` role="button" tabindex="${disabled ? -1 : 0}" aria-label="${hidden ? `String ${STRING_NAMES[st]}, fret ${f}` : nameOf(d)}">` +
       `<circle class="ring" r="${r + 5}"/>` +
       `<circle class="disc" r="${r}"/>` +

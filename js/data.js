@@ -155,6 +155,38 @@ export function positionsOf(place, midi) {
   return all.slice(0, 1);
 }
 
+// ---------- resolution to Do ----------
+
+function walk(offset, mode, up) {
+  const scale = SCALES[mode] || SCALES.major;
+  const base = Math.floor(offset / 12) * 12;
+  const r = offset - base;
+  const path = [offset];
+  if (r === 0) return path;
+  if (up) {
+    for (const s of scale) if (s > r) path.push(base + s);
+    path.push(base + 12);
+  } else {
+    for (let i = scale.length - 1; i >= 0; i--) if (scale[i] < r) path.push(base + scale[i]);
+  }
+  return path;
+}
+
+/**
+ * Offsets (semitones above the tonic) from `offset` stepwise to the nearest Do, the note itself
+ * first. Notes from Sol up resolve upward, the rest downward; a chromatic note first moves to its
+ * neighbour in that direction. With `tonic` (MIDI of Do) given, a path that would leave
+ * [MIN_MIDI, MAX_MIDI] is replaced by the one in the other direction.
+ */
+export function resolutionOf(offset, mode = 'major', tonic = null) {
+  const up = mod12(offset) >= 7;
+  const fits = (p) => tonic == null || p.every((o) => tonic + o >= MIN_MIDI && tonic + o <= MAX_MIDI);
+  const first = walk(offset, mode, up);
+  if (fits(first)) return first;
+  const other = walk(offset, mode, !up);
+  return fits(other) ? other : first;
+}
+
 // ---------- cadence in any key and mode ----------
 
 /** Chord voicings as semitones from the tonic chord's root R (low → high). */
