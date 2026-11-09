@@ -1,11 +1,14 @@
 // Web Audio playback. Everything is scheduled on the AudioContext clock.
 
 import { renderPluck, ksParams, midiToFreq } from './ks.js';
-import { CHORDS, CADENCE } from './data.js';
+import { CHORDS, CADENCE, CHAPTERS, midiOf } from './data.js';
+import { loadSample } from './samples.js';
 
 let ctx = null;
 let out = null; // input of the shared chain: lowpass → master → compressor → destination
-const buffers = new Map(); // midi → { buffer, rate }
+let sound = 'guitar'; // 'guitar' (recorded samples) | 'synth' (Karplus–Strong)
+const buffers = new Map(); // midi → synth entry { buffer, rate, gain }
+const samples = new Map(); // midi → decoded sample entry { buffer, rate, gain }
 const voices = new Set(); // { src, gain }
 
 const CHORD_GAP = 0.7; // seconds between cadence chords
@@ -29,12 +32,34 @@ export function ensureAudio() {
     comp.ratio.value = 4;
     lp.connect(master).connect(comp).connect(ctx.destination);
     out = lp;
+    applyTone();
+    // Start loading every note the app uses, so samples are ready before the first level.
+    const used = CHAPTERS.flatMap((c) => c.notes.map(midiOf)).concat(Object.values(CHORDS).flat());
+    if (sound === 'guitar') loadSamples(used);
   }
   if (ctx.state === 'suspended') ctx.resume();
   return ctx;
 }
 
 export const now = () => (ctx ? ctx.currentTime : 0);
+
+/** Samples need less high-cut than the synth. */
+function applyTone() {
+  if (out) out.frequency.value = sound === 'guitar' ? 9000 : 4500;
+}
+
+/** Switch between recorded samples and the synth. */
+export function setSound(mode) {
+  sound = mode === 'synth' ? 'synth' : 'guitar';
+  applyTone();
+}
+
+function loadSamples(midis) {
+  for (const m of new Set(midis)) {
+    if (samples.has(m)) continue;
+    loadSample(ctx, m).then((entry) => { if (entry) samples.set(m, entry); });
+  }
+}
 
 function getBuffer(midi) {
   let b = buffers.get(midi);
@@ -43,15 +68,24 @@ function getBuffer(midi) {
     const data = renderPluck(f, ctx.sampleRate);
     const buffer = ctx.createBuffer(1, data.length, ctx.sampleRate);
     buffer.copyToChannel(data, 0);
-    b = { buffer, rate: ksParams(f, ctx.sampleRate).rate };
+    b = { buffer, rate: ksParams(f, ctx.sampleRate).rate, gain: 1 };
     buffers.set(midi, b);
   }
   return b;
 }
 
-/** Render buffers ahead of time in idle slices so the first play never stutters. */
+/** The entry to play: the sample in guitar mode once it's loaded, otherwise the synth. */
+function getVoiceSource(midi) {
+  return (sound === 'guitar' && samples.get(midi)) || getBuffer(midi);
+}
+
+/**
+ * Get notes ready ahead of time: load samples (guitar mode) and render synth buffers in idle
+ * slices (always, as the fallback) so the first play never stutters.
+ */
 export function prerender(midis) {
   if (!ctx) return;
+  if (sound === 'guitar') loadSamples(midis);
   const todo = [...new Set(midis)].filter((m) => !buffers.has(m));
   const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 16));
   const step = () => {
@@ -66,12 +100,12 @@ export function prerender(midis) {
 /** Play one note at context time `when`; returns the voice. */
 export function playNote(midi, when = now(), gain = 0.9) {
   if (!ctx) return null;
-  const { buffer, rate } = getBuffer(midi);
+  const { buffer, rate, gain: level } = getVoiceSource(midi);
   const src = ctx.createBufferSource();
   src.buffer = buffer;
   src.playbackRate.value = rate;
   const g = ctx.createGain();
-  g.gain.value = gain;
+  g.gain.value = gain * level;
   src.connect(g).connect(out);
   src.start(Math.max(when, ctx.currentTime));
   const voice = { src, gain: g };

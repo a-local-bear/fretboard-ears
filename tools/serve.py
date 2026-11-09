@@ -16,6 +16,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         '.webmanifest': 'application/manifest+json',
         '.woff2': 'font/woff2',
         '.svg': 'image/svg+xml',
+        '.mp3': 'audio/mpeg',
     }
 
     def end_headers(self):

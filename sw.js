@@ -2,7 +2,7 @@
 // The block between the STAMP markers is rewritten by tools/stamp_version.py; don't edit it by hand.
 
 // STAMP:BEGIN
-const CACHE = 'fe-9b5d5bb262';
+const CACHE = 'fe-0792cd29df';
 const PRECACHE = [
   "./",
   "fonts/fraunces-latin-wght-normal.woff2",
@@ -19,9 +19,47 @@ const PRECACHE = [
   "js/ks.js",
   "js/main.js",
   "js/progress.js",
+  "js/samples.js",
   "js/storage.js",
   "js/ui.js",
   "manifest.webmanifest",
+  "samples/eg-clean/40.mp3",
+  "samples/eg-clean/41.mp3",
+  "samples/eg-clean/42.mp3",
+  "samples/eg-clean/43.mp3",
+  "samples/eg-clean/44.mp3",
+  "samples/eg-clean/45.mp3",
+  "samples/eg-clean/46.mp3",
+  "samples/eg-clean/47.mp3",
+  "samples/eg-clean/48.mp3",
+  "samples/eg-clean/49.mp3",
+  "samples/eg-clean/50.mp3",
+  "samples/eg-clean/51.mp3",
+  "samples/eg-clean/52.mp3",
+  "samples/eg-clean/53.mp3",
+  "samples/eg-clean/54.mp3",
+  "samples/eg-clean/55.mp3",
+  "samples/eg-clean/56.mp3",
+  "samples/eg-clean/57.mp3",
+  "samples/eg-clean/58.mp3",
+  "samples/eg-clean/59.mp3",
+  "samples/eg-clean/60.mp3",
+  "samples/eg-clean/61.mp3",
+  "samples/eg-clean/62.mp3",
+  "samples/eg-clean/63.mp3",
+  "samples/eg-clean/64.mp3",
+  "samples/eg-clean/65.mp3",
+  "samples/eg-clean/66.mp3",
+  "samples/eg-clean/67.mp3",
+  "samples/eg-clean/68.mp3",
+  "samples/eg-clean/69.mp3",
+  "samples/eg-clean/70.mp3",
+  "samples/eg-clean/71.mp3",
+  "samples/eg-clean/72.mp3",
+  "samples/eg-clean/73.mp3",
+  "samples/eg-clean/74.mp3",
+  "samples/eg-clean/75.mp3",
+  "samples/eg-clean/76.mp3",
   "style.css"
 ];
 // STAMP:END

@@ -9,7 +9,7 @@ import {
   isPassed, isUnlocked, chapterUnlocked, bestScore, levelPassed, recordScore, nextLevel, passedCount,
 } from './progress.js';
 import { loadSettings, saveSettings, loadProgress, saveProgress, appendLog, requestPersistence } from './storage.js';
-import { ensureAudio, prerender, playNote, playReference, playArpeggio, stopAll, now } from './audio.js';
+import { ensureAudio, prerender, playNote, playReference, playArpeggio, stopAll, now, setSound } from './audio.js';
 import { fretboardSVG } from './fretboard.js';
 
 const CORRECT_DELAY = 1100;
@@ -189,6 +189,8 @@ const SCREENS = {
         <p class="hint">Hidden shows plain dots, so you answer by position only.</p></section>
       <section><h2 class="sub">Before each note</h2>${seg('ref', [['cadence', 'Cadence'], ['do', 'Do'], ['none', 'Nothing']])}
         <p class="hint">Cadence strums C–F–G–C. Do plays the root. Nothing is the hardest.</p></section>
+      <section><h2 class="sub">Sound</h2>${seg('sound', [['guitar', 'Electric guitar'], ['synth', 'Synth']])}
+        <p class="hint">Electric guitar uses recorded notes. Synth is the original plucked-string sound.</p></section>
       <section><h2 class="sub">Levels</h2>
         <button class="toggle" role="switch" aria-checked="${S.progress.unlockAll}" data-action="unlockAll" data-focus-key="unlockAll">
           <span class="knob"></span><span>Unlock all levels</span></button></section>
@@ -346,6 +348,10 @@ const ACTIONS = {
     const [key, value] = arg.split(':');
     S.settings = { ...S.settings, [key]: value };
     saveSettings(S.settings);
+    if (key === 'sound') {
+      setSound(value);
+      if (ensureAudio()) prerender([...levelMidis(), ...CHORDS.C, ...CHORDS.F, ...CHORDS.G]);
+    }
     render();
   },
   unlockAll: () => {
@@ -404,6 +410,7 @@ function onResize() {
 
 export function mount(root) {
   app = root;
+  setSound(S.settings.sound);
   app.addEventListener('click', onClick);
   app.addEventListener('keydown', (e) => {
     const dot = e.target.closest?.('.dot');

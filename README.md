@@ -47,7 +47,8 @@ Node is only used to run the tests. There are no npm packages.
 | `js/deck.js` | Question order per level (pure) |
 | `js/progress.js` | Pass and unlock rules, best scores (pure) |
 | `js/ks.js` | Karplus–Strong synthesis (pure) |
-| `js/audio.js` | Web Audio playback and scheduling |
+| `js/audio.js` | Web Audio playback and scheduling; switches between samples and synth |
+| `js/samples.js` | Loads, trims and normalises the guitar samples |
 | `js/fretboard.js` | SVG fretboard |
 | `js/storage.js` | localStorage, persistence request, answer log |
 | `js/ui.js` | State, screens, input |
@@ -55,6 +56,7 @@ Node is only used to run the tests. There are no npm packages.
 | `sw.js` | Offline cache. The block between the STAMP markers is generated. |
 | `tools/stamp_version.py` | Hashes the app files into the cache name and precache list |
 | `tools/make_icons.py` | Regenerates `icons/*.png` (pure Python) |
+| `tools/fetch_samples.py` | Downloads the guitar samples into `samples/eg-clean/` |
 | `tools/serve.py` | Local static server with correct MIME types |
 
 ## Updating
@@ -63,8 +65,18 @@ Edit files, then restart `./serve.sh` (or run `python3 tools/stamp_version.py`).
 Open copies of the app show "A new version is ready" and update when you tap Reload.
 If you add a new kind of file, also add its glob to `PATTERNS` in `tools/stamp_version.py`.
 
+## Sounds
+
+By default notes play from recorded clean electric guitar samples: MIDI 40–76 (E2–E5) in `samples/eg-clean/`, about 660 KB, cached for offline use.
+They come from the FatBoy soundfont via [gleitz/midi-js-soundfonts](https://github.com/gleitz/midi-js-soundfonts) and are licensed
+[CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/). See `samples/eg-clean/ATTRIBUTION.md`. That licence covers the sample files only.
+Re-download them with `python3 tools/fetch_samples.py`.
+
+Settings → Sound switches to **Synth**, the original Karplus–Strong plucked string (`js/ks.js`).
+The synth also plays any note whose sample hasn't loaded yet.
+
 ## Stored data (localStorage)
 
-- `fe-settings`: `{labels: "solfege"|"letters"|"hidden", ref: "cadence"|"do"|"none"}`
+- `fe-settings`: `{labels: "solfege"|"letters"|"hidden", ref: "cadence"|"do"|"none", sound: "guitar"|"synth"}`
 - `fe-progress`: `{best: {"<chapter>-<level>": 0..10}, unlockAll}`. Chapter ids are `one`, `pA`, `pB` and `pC`. Levels are numbered from 0.
 - `fe-log`: the last 5000 rounds as `{t, ch, lvl, heard, answered, tries, ref, labels}`. `answered` is the first tap, `tries` the taps needed to find the note. Degrees run 0 = Do to 7 = Do'.
