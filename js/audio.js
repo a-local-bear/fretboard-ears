@@ -298,6 +298,36 @@ export function stopLoop() {
   stopAll(0.12);
 }
 
+/** Strum one chord (MIDI array, low → high) at context time `when`. */
+export function strumChord(notes, when = now() + 0.03, gain = 0.3) {
+  return ctx ? strum(notes, when, gain) : [];
+}
+
+/**
+ * Strum a sequence of chords, `list` = [{ notes (MIDI array), at (context time), gain? }] in time
+ * order; each strum damps the one before, like a guitarist's hand.
+ */
+export function playChords(list, gain = 0.26) {
+  if (!ctx) return;
+  let prev = [];
+  for (const c of list) {
+    for (const v of prev) if (v) fadeVoice(v, c.at - CHORD_DAMP, CHORD_DAMP + 0.03);
+    prev = strum(c.notes, c.at, c.gain ?? gain);
+  }
+}
+
+/**
+ * Play a melody, `list` = [{ midi, at (context time), dur (seconds) }]: each note is damped when
+ * its written length is over (with a short release), so fast tunes don't blur into a cluster.
+ */
+export function playMelody(list, gain = 0.9) {
+  if (!ctx) return;
+  for (const n of list) {
+    const v = playNote(n.midi, n.at, gain);
+    if (v) fadeVoice(v, Math.max(n.at + n.dur * 0.95, ctx.currentTime), 0.12);
+  }
+}
+
 /** Strum `chord` and sound `midi` over it (the replay of a round with a chord). Returns the note's time. */
 export function playOver(chord, midi) {
   const t = now() + 0.03;

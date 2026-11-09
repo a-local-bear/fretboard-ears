@@ -2,26 +2,32 @@
 
 import {
   OPEN, SCALES, MIN_MIDI, MAX_MIDI, CHAPTERS, ROUNDS, PASS_SCORE, FAMILIES, noteColor, solfegeName, letterName, keyName, keyLetter, degreeIndex,
-  chapterById, levelsFor, buildContext, pickKey, placeChapter, positionsOf, resolutionOf,
+  chapterById, levelsFor, buildContext, pickKey, placeChapter, positionsOf, resolutionOf, cadenceFor,
 } from './data.js';
 import { buildDeck } from './deck.js';
 import { buildSequenceDeck } from './phrase.js';
 import { noteWeights, buildAdaptiveDeckFor } from './adaptive.js';
 import { planSession, blockLabel } from './session.js';
 import {
-  isPassed, bestScore, recordScore, nextLevel, playedCount,
+  isPassed, bestScore, recordScore, recordBest, nextLevel, playedCount,
 } from './progress.js';
 import {
   loadSettings, saveSettings, loadProgress, saveProgress, loadKey, saveKey, appendLog, requestPersistence,
   loadStats, loadLog, loadBacking, saveBacking, loadGuides, saveGuides,
 } from './storage.js';
-import { STAGES, STEPS, levelOf, stepDone, nextStep, pathCount, guideById } from './path.js';
+import { STAGES, STEPS, levelOf, drillOf, stepOf, stepDone, nextStep, pathCount, guideById, guideParagraphs } from './path.js';
+import { DRILLS, DRILL_GROUPS, TONIC_LABELS, drillById, buildDrillDeck, tuneDrill } from './drills.js';
+import {
+  TUNES, PROGRESSIONS, tuneById, progressionById, tuneNotes, tunePhrases, tuneChords, tuneTonic, fitTonic, degName, degColor,
+} from './songs.js';
+import { loopEvents, cycleSeconds } from './sequencer.js';
 import {
   streaks, heatmap, totals, degreeAccuracy, topConfusions, triesAfterMiss, avgResponseMs, trend,
 } from './stats.js';
 import { progressHTML } from './charts.js';
 import {
   ensureAudio, prerender, playNote, playReference, playOver, playArpeggio, startLoop, stopLoop, loopActive, stopAll, droneActive, now, setSound, setNoteLimit, quietAt, callAt,
+  strumChord, playChords, playMelody,
 } from './audio.js';
 import { GAP_OPTIONS, spoken, revealTimeline } from './listen.js';
 import { fretboardSVG } from './fretboard.js';
@@ -40,7 +46,7 @@ const MIC_NOTE_LIMIT = 1.6; // seconds the app's notes may ring while the mic li
 const VERTICAL_BELOW = 640;
 
 const S = {
-  screen: 'home', // home | levels | explore | play | listen | results | settings | stats | backing | path | guide
+  screen: 'home', // home | levels | explore | play | listen | results | settings | stats | backing | path | guide | drills | drill | songbook | tune | prog
   chapterId: 'one',
   level: 0, // index into levelsFor(chapterId)
   keyPc: loadKey(), // tonic of the fixed-key levels (0 = C … 11 = B)
@@ -68,6 +74,8 @@ const S = {
   bt: { ...loadBacking(), playing: false, cur: null, sel: 0, flash: null }, // backing track: saved fields + runtime state
   guides: loadGuides(), // ids of the path guides marked done
   guideId: null, // the guide open on the guide screen
+  dr: null, // ear drill: { drill, back, phase: intro | listen | retry | feedback | done, deck, round, answers, pos, states, pick (auditioned key), fresh, tonic (MIDI of Do), result }
+  sb: { kind: 'tune', id: TUNES[0].id, key: 0, show: false, back: 'songbook' }, // the songbook page open: a tune or a progression
   btBack: 'home', // where the backing track's back button goes (a guide opens it with its loop)
   settings: loadSettings(),
   progress: loadProgress(),
@@ -119,8 +127,8 @@ function render() {
   if (focusKey) app.querySelector(`[data-focus-key="${focusKey}"]`)?.focus();
 }
 
-const btn = (action, label, cls = '', extra = '') =>
-  `<button class="btn ${cls}" data-action="${action}" data-focus-key="${action}${extra ? '-' + esc(extra) : ''}" ${extra ? `data-arg="${esc(extra)}"` : ''}>${label}</button>`;
+const btn = (action, label, cls = '', extra = '', disabled = false) =>
+  `<button class="btn ${cls}" data-action="${action}" data-focus-key="${action}${extra ? '-' + esc(extra) : ''}" ${extra ? `data-arg="${esc(extra)}"` : ''}${disabled ? ' disabled' : ''}>${label}</button>`;
 
 const topbar = (title, back, sub = '') => `
   <header class="topbar">
@@ -175,6 +183,19 @@ const SCREENS = {
           </button></li>`;
         }).join('')}
       </ol>
+      <h2 class="sub">Beyond single notes</h2>
+      <ol class="chapters">
+        <li><button class="chapter" data-action="drills" data-focus-key="drills">
+          <span class="cnum">♪</span>
+          <span class="cbody"><span class="cname">Ear drills</span><span class="cdesc">Chords, progressions, and the key of a tune</span></span>
+          <span class="cmeta">${DRILLS.filter((d) => S.progress.best[d.id] != null).length}/${DRILLS.length} played</span>
+        </button></li>
+        <li><button class="chapter" data-action="songbook" data-focus-key="songbook">
+          <span class="cnum">♫</span>
+          <span class="cbody"><span class="cname">Songbook</span><span class="cdesc">Tunes and progressions to learn by ear</span></span>
+          <span class="cmeta">${TUNES.length} tunes</span>
+        </button></li>
+      </ol>
       <div class="actions">${btn('path', 'Path', 'ghost')}${btn('backing', 'Backing track', 'ghost')}${btn('stats', 'Practice stats', 'ghost')}</div>
     </main>`;
   },
@@ -226,6 +247,7 @@ const SCREENS = {
       return `${topbar(esc(level().name), 'levels', esc(chapter().name))}
     <main class="screen explore">
       <p class="keyline">${esc(keyLabel())}</p>
+      ${pathTip()}
       <p class="lede">${intro} Each round shows ${level().len > 1 ? `${level().len} notes` : 'a note'} as text and plays none. <b>Sing</b> ${level().len > 1 ? 'them one by one' : 'it'} (any octave), then <b>find</b> ${level().len > 1 ? 'them' : 'it'} on the neck by tapping or playing. Tap the dots to hear each note first.</p>
       ${micBar()}
       ${blocked ? `<p class="micnote">${blocked}</p><p class="lede"><b>Self-check:</b> sing the note, tap Hear it to compare, then mark yourself right or wrong. Nothing is detected, so it is on your honour.</p>${S.mic === 'blocked' ? `<div class="actions">${btn('micretry', 'Try the mic again', 'ghost')}</div>` : ''}` : ''}
@@ -242,6 +264,7 @@ const SCREENS = {
     return `${topbar(esc(level().name), 'levels', esc(chapter().name))}
     <main class="screen explore">
       <p class="keyline">${esc(keyLabel())}</p>
+      ${pathTip()}
       <p class="lede">${intro} ${where} ${phrase} ${S.mic === 'on' ? 'Tap the dots to hear each one, or play them to check the mic hears you' : 'Tap the dots to hear each one'}, then start.</p>
       ${micBar()}
       <div class="boardwrap">${board({ states: S.states })}</div>
@@ -485,20 +508,21 @@ const SCREENS = {
     let n = 0;
     return `${topbar('Path', 'home')}
     <main class="screen path">
-      <p class="lede">A suggested order through the levels. After each stage, a guide shows how to use the new notes on your guitar. A level counts once you score ${PASS_SCORE}/${ROUNDS}.</p>
+      <div class="prose"><p>A suggested order through the app, from your first four notes to learning whole songs by ear. Each stage mixes note levels and ear drills, and ends with a guide that shows how to use what you learned on your guitar. A level or drill counts once you score ${PASS_SCORE}/${ROUNDS}.</p>
+        <p>By the end you can find the key of a song, follow its chords, take down its melody in solfège, sing it and play it, in any key and anywhere on the neck.</p></div>
       <p class="keyline">${done}/${total} steps done</p>
       ${STAGES.map((st, si) => `<section class="family">
         <h2 class="sub">${si + 1} · ${esc(st.name)}</h2>
-        <p class="hint">${esc(st.desc)}</p>
+        <p class="hint stagedesc"><b>${esc(st.desc)}</b> ${esc(st.about)}</p>
         <ol class="steps">${st.steps.map(() => {
           const step = STEPS[n++];
           const ok = stepDone(step, S.progress, S.guides);
           const now = step === nx;
-          const best = step.kind === 'level' ? S.progress.best[step.id] : null;
+          const best = step.kind !== 'guide' ? S.progress.best[step.id] : null;
           const meta = step.kind === 'guide' ? (ok ? 'Done' : 'Guide') : best == null ? 'Not played' : `Best ${best}/${ROUNDS}`;
           return `<li><button class="step ${step.kind} ${ok ? 'done' : ''} ${now ? 'now' : ''}" data-action="pathstep" data-arg="${step.n}" data-focus-key="step-${step.n}"${now ? ' aria-current="step"' : ''}>
-            <span class="smark" aria-hidden="true">${ok ? '✓' : now ? '▶' : step.kind === 'guide' ? '◆' : '·'}</span>
-            <span class="cbody"><span class="sname">${esc(stepName(step))}</span>${step.kind === 'level' ? `<span class="cdesc">${esc(chapterById(levelOf(step).chapterId).name)}</span>` : ''}</span>
+            <span class="smark" aria-hidden="true">${ok ? '✓' : now ? '▶' : step.kind === 'guide' ? '◆' : step.kind === 'drill' ? '♪' : '·'}</span>
+            <span class="cbody"><span class="sname">${esc(stepName(step))}</span>${step.kind === 'level' ? `<span class="cdesc">${esc(chapterById(levelOf(step).chapterId).name)}</span>` : step.kind === 'drill' ? '<span class="cdesc">Ear drill</span>' : ''}${step.tip ? `<span class="stip">${esc(step.tip)}</span>` : ''}</span>
             <span class="cmeta">${now ? 'Next' : meta}</span>
           </button></li>`;
         }).join('')}</ol>
@@ -516,11 +540,18 @@ const SCREENS = {
     }).join('') : '';
     return `${topbar(esc(g.title), 'path', `Guide · stage ${g.stage + 1}`)}
     <main class="screen guide">
-      <p class="lede">${esc(g.intro)}</p>
+      <div class="prose">${guideParagraphs(g).map((p) => `<p>${esc(p)}</p>`).join('')}</div>
       ${loop ? `<section class="btsec"><h2 class="sub">The loop</h2>
         <div class="slots">${chords}</div>
         <p class="hint">${esc(keyName(loop.key, loop.mode))} · ${loop.tempo} bpm · ${loop.bars} bar${loop.bars > 1 ? 's' : ''} per chord</p>
         <div class="actions">${btn('guideloop', 'Play this loop', 'ghost')}</div>
+      </section>` : ''}
+      ${g.examples ? `<section class="btsec"><h2 class="sub">From the songbook</h2>
+        <div class="examples">${(g.examples.tunes || []).map((id) => `<button class="preset" data-action="sbtune" data-arg="${id}" data-focus-key="ex-${id}">♫ ${esc(tuneById(id).title)}</button>`).join('')}${(g.examples.progs || []).map((id) => {
+          const p = progressionById(id);
+          return `<button class="preset" data-action="sbprog" data-arg="${id}" data-focus-key="ex-${id}">${esc(p.name)} <span class="snum">${p.slots.length > 4 ? '12 bars' : esc(p.slots.join(' '))}</span></button>`;
+        }).join('')}</div>
+        <p class="hint">Open one, play it, and work it out on your guitar before you reveal it.</p>
       </section>` : ''}
       <section class="tries"><h2 class="sub">Things to try</h2>
         <ol>${g.tries.map((t) => `<li>${esc(t)}</li>`).join('')}</ol>
@@ -530,6 +561,136 @@ const SCREENS = {
         ${ok ? btn('guideundo', 'Mark not done', 'ghost') : ''}
         ${btn('guidedone', ok ? 'Continue path' : 'Done, continue', 'primary')}
       </div>
+    </main>`;
+  },
+
+  drills() {
+    return `${topbar('Ear drills', 'home')}
+    <main class="screen levels">
+      <p class="lede">Chords, progressions, the key of a tune, and phrases of real songs. Each drill is ${ROUNDS} rounds in a new key every time; ${PASS_SCORE} right passes it.</p>
+      ${DRILL_GROUPS.map((g) => `<section class="family">
+        <h2 class="sub">${esc(g.name)}</h2>
+        <p class="hint">${esc(g.desc)}</p>
+        <ol class="levelgrid">${DRILLS.filter((d) => d.group === g.id).map((d) => {
+          const best = S.progress.best[d.id];
+          return `<li><button class="levelcard ${best != null && isPassed(best) ? 'passed' : ''}" data-action="drill" data-arg="${d.id}" data-focus-key="drill-${d.id}">
+            <span class="dname">${esc(d.name)}</span>
+            <span class="lbest">${best == null ? 'Not played' : `Best ${best}/${ROUNDS}`}</span>
+          </button></li>`;
+        }).join('')}</ol>
+      </section>`).join('')}
+      <div class="actions">${btn('songbook', 'Songbook', 'ghost')}</div>
+    </main>`;
+  },
+
+  drill() {
+    const dr = S.dr;
+    const d = dr.drill;
+    const top = topbar(esc(d.name), dr.back, d.single ? 'Songbook' : 'Ear drill');
+    if (dr.phase === 'intro') {
+      const best = d.single ? null : S.progress.best[d.id];
+      const tip = stepOf(d.id)?.tip;
+      return `${top}
+    <main class="screen drill">
+      <div class="prose">${d.about.map((p) => `<p>${esc(p)}</p>`).join('')}</div>
+      ${tip ? `<p class="hint pathtip"><b>On the path:</b> ${esc(tip)}</p>` : ''}
+      ${best != null ? `<p class="keyline">Best ${best}/${ROUNDS}</p>` : ''}
+      <div class="actions">${btn('drstart', 'Start', 'primary')}</div>
+    </main>`;
+    }
+    if (dr.phase === 'done') return `${top}<main class="screen results">${drResultsHTML()}</main>`;
+    const r = drRound();
+    const score = dr.answers.filter(roundOk).length;
+    const pips = Array.from({ length: ROUNDS }, (_, i) => {
+      const a = dr.answers[i];
+      return `<i class="${a ? (roundOk(a) ? 'ok' : roundBad(a) ? 'bad' : 'now') : i === dr.round ? 'now' : ''}"></i>`;
+    }).join('');
+    return `${top}
+    <main class="screen play drill">
+      <div class="roundbar" aria-label="Round ${dr.round + 1} of ${ROUNDS}, ${score} correct">
+        <span class="pips">${pips}</span>
+        <span class="count">${dr.round + 1}/${ROUNDS}</span>
+      </div>
+      <p class="prompt" aria-live="polite">${drPrompt()}</p>
+      ${drSlotsHTML()}
+      ${drChoicesHTML()}
+      <div class="actions">
+        ${btn('drplay', 'Replay', r.audition ? 'ghost' : 'primary')}
+        ${r.audition ? btn('drcommit', 'That\'s home', 'primary', '', dr.pick == null || dr.phase === 'feedback') : ''}
+        ${dr.phase === 'feedback' ? btn('drnext', 'Next', 'ghost') : ''}
+      </div>
+    </main>`;
+  },
+
+  songbook() {
+    return `${topbar('Songbook', 'home')}
+    <main class="screen songbook">
+      <p class="lede">Tunes and chord progressions to learn by ear, in any key. Open one, press Play, and work it out on your guitar before you reveal the notes.</p>
+      <section class="family"><h2 class="sub">Tunes</h2>
+        <ol class="chapters">${TUNES.map((t) => `<li><button class="chapter" data-action="sbtune" data-arg="${t.id}" data-focus-key="sbtune-${t.id}">
+          <span class="cnum">${t.mode === 'minor' ? 'min' : 'maj'}</span>
+          <span class="cbody"><span class="cname">${esc(t.title)}</span><span class="cdesc">${esc(t.about.split('. ')[0])}.</span></span>
+          <span class="cmeta">${tunePhrases(t).length} phrases</span>
+        </button></li>`).join('')}</ol>
+      </section>
+      <section class="family"><h2 class="sub">Progressions</h2>
+        <ol class="chapters">${PROGRESSIONS.map((p) => `<li><button class="chapter" data-action="sbprog" data-arg="${p.id}" data-focus-key="sbprog-${p.id}">
+          <span class="cnum">${p.mode === 'minor' ? 'min' : 'maj'}</span>
+          <span class="cbody"><span class="cname">${esc(p.name)}</span><span class="cdesc">${p.slots.length > 4 ? '12 bars of I, IV and V' : esc(p.slots.join(' – '))}</span></span>
+          <span class="cmeta"></span>
+        </button></li>`).join('')}</ol>
+      </section>
+    </main>`;
+  },
+
+  tune() {
+    const t = tuneById(S.sb.id);
+    const { key, show } = S.sb;
+    const bars = t.chords.map((bar, i) => `<span class="bar">${bar.split(/\s+/).map((n) => {
+      const c = chordByNumeral(t.mode, n);
+      return `<span class="bchord"><span class="snum">${esc(n)}</span>${coloredName(c.root, chordName(c, key, t.mode))}</span>`;
+    }).join('')}<span class="bnum">${i + 1}</span></span>`).join('');
+    const phrases = tunePhrases(t).map((ph, i) => `<li><button class="phrasebtn" data-action="sbphrase" data-arg="${i}" data-focus-key="sbphrase-${i}" aria-label="Play phrase ${i + 1}">▶</button>
+      <span class="pnotes">${show ? ph.map((n) => tuneNoteHTML(n.o, key, t.mode)).join(' ') : ph.map(() => '<i class="pdot"></i>').join('')}</span></li>`).join('');
+    return `${topbar(esc(t.title), S.sb.back, 'Songbook')}
+    <main class="screen tune">
+      <p class="lede">${esc(t.about)}</p>
+      <div class="keybar"><span class="keylabel" id="keylabel">Key · ${esc(keyName(key, t.mode))}</span><div class="keychips" role="group" aria-labelledby="keylabel">${sbKeys(t.mode)}</div></div>
+      <div class="actions">
+        ${btn('sbplay', 'Play', 'primary')}${btn('sbmelody', 'Melody only', 'ghost')}${btn('sbchords', 'Chords only', 'ghost')}${btn('sbstop', 'Stop', 'ghost')}
+      </div>
+      <section class="btsec"><h2 class="sub">Melody</h2>
+        <p class="hint">${show ? 'Tap ▶ to hear a phrase on its own.' : 'Try it first: find Do on your guitar, then work out each phrase by ear. Tap ▶ to hear one phrase, and reveal the notes to check.'}</p>
+        <ol class="phrases">${phrases}</ol>
+        <div class="actions">${btn('sbshow', show ? 'Hide notes' : 'Show notes', 'ghost')}${btn('sbpractise', 'Practise its phrases', 'ghost')}</div>
+      </section>
+      <section class="btsec"><h2 class="sub">Chords, one box per bar</h2>
+        <div class="tunebars">${bars}</div>
+        <p class="hint">${t.meter} beats per bar${t.pickup ? `, starting with ${t.pickup === 1 ? 'one beat' : `${t.pickup} beats`} before the first bar` : ''}. Strum each chord as it arrives while you sing the melody.</p>
+      </section>
+    </main>`;
+  },
+
+  prog() {
+    const p = progressionById(S.sb.id);
+    const { key } = S.sb;
+    const slots = p.slots.map((n) => {
+      const c = chordByNumeral(p.mode, n);
+      return `<span class="slot"><span class="snum">${esc(n)}</span>${coloredName(c.root, chordName(c, key, p.mode))}</span>`;
+    }).join('');
+    return `${topbar(esc(p.name), S.sb.back, 'Songbook')}
+    <main class="screen guide prog">
+      <p class="lede">${esc(p.about)}</p>
+      <div class="keybar"><span class="keylabel" id="keylabel">Key · ${esc(keyName(key, p.mode))}</span><div class="keychips" role="group" aria-labelledby="keylabel">${sbKeys(p.mode)}</div></div>
+      <section class="btsec"><h2 class="sub">The chords</h2>
+        <div class="slots ${p.slots.length > 4 ? 'twelve' : ''}">${slots}</div>
+        <p class="hint">Change the key and the chord names move; the numerals stay the same. That is why musicians talk about progressions in numerals.</p>
+        <div class="actions">${btn('sbprogplay', 'Play', 'primary')}${p.slots.length <= 4 ? btn('sbalong', 'Loop it on the backing track', 'ghost') : ''}${btn('sbstop', 'Stop', 'ghost')}</div>
+      </section>
+      <section class="btsec"><h2 class="sub">Hear it in</h2>
+        <ul class="songlist">${p.songs.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>
+        <p class="hint">Find a recording, find its home chord on your guitar, and play the progression along with it. The song may be in another key: move the key here until it matches.</p>
+      </section>
     </main>`;
   },
 
@@ -559,7 +720,13 @@ const SCREENS = {
 };
 
 /** A path step's short name: the level's title or the guide's. */
-const stepName = (step) => (step.kind === 'guide' ? step.title : levelOf(step).title);
+const stepName = (step) => (step.kind === 'guide' ? step.title : step.kind === 'drill' ? drillOf(step).name : levelOf(step).title);
+
+/** On a level's explore screen: what its path step is for, when it is on the path. */
+function pathTip() {
+  const tip = S.ctx && stepOf(level().id)?.tip;
+  return tip ? `<p class="hint pathtip"><b>On the path:</b> ${esc(tip)}</p>` : '';
+}
 
 /** Home: the next step of the path, one tap away. */
 function nextUpHTML() {
@@ -570,7 +737,7 @@ function nextUpHTML() {
       <span class="keyline">Path complete · ${total}/${total}</span>
       <span class="sname">Keep going with daily practice</span></button>`;
   }
-  const where = nx.kind === 'level' ? `${chapterById(levelOf(nx).chapterId).name} · ` : 'Guide · ';
+  const where = nx.kind === 'level' ? `${chapterById(levelOf(nx).chapterId).name} · ` : nx.kind === 'drill' ? 'Ear drill · ' : 'Guide · ';
   return `<button class="nextup" data-action="pathnext" data-focus-key="nextup">
       <span class="keyline">Next up · step ${nx.n + 1}/${total}</span>
       <span class="sname">${esc(stepName(nx))}</span>
@@ -581,6 +748,7 @@ function nextUpHTML() {
 function openStep(step) {
   if (!step) return go('path');
   if (step.kind === 'guide') { S.guideId = step.id; return go('guide'); }
+  if (step.kind === 'drill') return openDrill(drillOf(step), 'path');
   const l = levelOf(step);
   S.chapterId = l.chapterId;
   openLevel(l.idx);
@@ -1261,6 +1429,372 @@ function onRange(e) {
   if (e.type === 'change') btChanged();
 }
 
+// ---------- ear drills ----------
+
+const DR_CHORD_STEP = 1.3; // seconds per chord of a drill progression
+const DR_BLUES_STEP = 0.95; // a twelve-bar progression moves faster
+const drRound = () => S.dr.deck[S.dr.round];
+const mod12 = (n) => ((n % 12) + 12) % 12;
+const QUALITY_THIRD = { maj: 4, min: 3 };
+/** Root-position chord on `root` (MIDI) of quality 'maj' | 'min', guitar-like spacing. */
+const qualityVoicing = (root, q) => [root, root + 7, root + 12, root + 12 + QUALITY_THIRD[q], root + 19];
+const chordIn = (r, numeral) => chordByNumeral(r.mode, numeral);
+const chordNames = (r, nums) => nums.map((n) => coloredName(chordIn(r, n).root, chordName(chordIn(r, n), r.keyPc, r.mode))).join(' ');
+/** A note of a tune or melody (an offset above Do, possibly below it) as coloured text. */
+const tuneNoteHTML = (o, keyPc, mode) => `<span class="deg" style="--c:${degColor(o)}">${esc(S.settings.labels === 'letters' ? letterName(mod12(o), keyPc, mode) : degName(o))}</span>`;
+
+/** A choice or answer id of a drill as coloured HTML. */
+function drLabelHTML(d, id, r = null) {
+  switch (d.kind) {
+    case 'quality': return id === 'maj' ? 'Major' : 'Minor';
+    case 'mode': return id === 'major' ? 'Major' : 'Minor';
+    case 'tonic': return esc(TONIC_LABELS[Number(id)]);
+    case 'named': return esc(progressionById(id).name);
+    case 'tune': return tuneNoteHTML(Number(id), r ? r.keyPc : 0, d.mode);
+    default: return numeralHTML(d.mode, id);
+  }
+}
+
+/** A roman numeral coloured like its chord's root. */
+const numeralHTML = (mode, n) => `<span class="deg" style="--c:${noteColor(chordByNumeral(mode, n).root)}">${esc(n)}</span>`;
+
+function openDrill(drill, back) {
+  S.dr = { drill, back, phase: 'intro', deck: [], round: 0, answers: [], pos: 0, states: {}, pick: null, fresh: false, tonic: null, result: null };
+  go('drill');
+  if (ensureAudio()) prerender(ALL_SAMPLE_MIDIS);
+}
+
+function drStart() {
+  const dr = S.dr;
+  dr.deck = buildDrillDeck(dr.drill);
+  dr.round = 0;
+  dr.answers = [];
+  dr.result = null;
+  window.scrollTo(0, 0);
+  drStartRound();
+}
+
+/** MIDI of Do for a melody round: the tune's own placement, or one that fits the melody. */
+function drTonicOf(r) {
+  if (!r.melody) return null;
+  if (S.dr.drill.kind === 'tune') return tuneTonic(tuneById(r.tune), r.keyPc);
+  const os = r.melody.map((n) => n.o);
+  return fitTonic(r.keyPc, Math.min(...os, 0), Math.max(...os, 0));
+}
+
+function drStartRound() {
+  clearTimer();
+  stopAll();
+  const dr = S.dr;
+  dr.phase = 'listen';
+  dr.pos = 0;
+  dr.states = {};
+  dr.pick = null;
+  dr.fresh = false;
+  dr.tonic = drTonicOf(drRound());
+  render();
+  drPlay();
+}
+
+/** Schedule a melody ([{ o, b }]) from context time `t`; returns when it ends. */
+function drMelody(melody, tonic, bpm, t) {
+  const beat = 60 / (bpm || 100);
+  let at = 0;
+  const notes = melody.map((n) => {
+    const e = { midi: tonic + n.o, at: t + at * beat, dur: n.b * beat };
+    at += n.b;
+    return e;
+  });
+  playMelody(notes);
+  return t + at * beat;
+}
+
+/** Play the round: the cadence if it has one, then its chord(s), chord quality or melody. */
+function drPlay() {
+  if (!ensureAudio() || !S.dr) return;
+  stopAll();
+  const r = drRound();
+  let t = now() + 0.05;
+  if (r.cadence) t = playReference('cadence', MIN_MIDI, cadenceFor(r.keyPc, r.mode).chords);
+  if (r.quality) {
+    const { root, q } = r.quality;
+    strumChord(qualityVoicing(root, q), t);
+    [0, QUALITY_THIRD[q], 7, 12].forEach((iv, i) => playNote(root + 12 + iv, t + 1.2 + i * 0.34, 0.75));
+  } else if (r.chords) {
+    const step = r.chords.length > 4 ? DR_BLUES_STEP : DR_CHORD_STEP;
+    playChords(r.chords.flatMap((n, i) => {
+      const notes = voicing(chordIn(r, n), r.keyPc);
+      const at = t + i * step;
+      return [{ notes, at }, { notes: notes.slice(-3).reverse(), at: at + step / 2, gain: 0.15 }];
+    }));
+  } else if (r.melody) {
+    drMelody(r.melody, S.dr.tonic, r.bpm, t);
+  }
+}
+
+/** The sound of a choice: the chord or note it names, in the round's key. */
+function drSound(id) {
+  const r = drRound();
+  const t = now() + 0.03;
+  switch (S.dr.drill.kind) {
+    case 'quality': strumChord(qualityVoicing(r.quality.root, id), t); break;
+    case 'function': case 'progression': strumChord(voicing(chordIn(r, id), r.keyPc), t); break;
+    case 'mode': strumChord(voicing(chordsFor(id)[0], r.keyPc), t); break;
+    case 'tune': playNote(S.dr.tonic + Number(id), t); break;
+    case 'tonic': {
+      // The candidate in the melody's own register, with its lower octave for weight.
+      const m = S.dr.tonic + mod12(Number(id) - r.keyPc + 6) - 6;
+      playNote(m, t);
+      if (m - 12 >= MIN_MIDI) playNote(m - 12, t, 0.5);
+      break;
+    }
+    default: break;
+  }
+}
+
+/** A tap on a choice. In a find-the-key round it only auditions the note; That's home commits it. */
+function drTap(id) {
+  const dr = S.dr;
+  if (!dr || (dr.phase !== 'listen' && dr.phase !== 'retry')) return;
+  if (!ensureAudio()) return;
+  if (drRound().audition) {
+    dr.pick = id;
+    stopAll();
+    drSound(id);
+    render();
+    return;
+  }
+  drCommit(id);
+}
+
+/** Answer the current position. Only the first answer at each position counts; keep trying after a miss. */
+function drCommit(id) {
+  const dr = S.dr;
+  if (id == null || (dr.phase !== 'listen' && dr.phase !== 'retry')) return;
+  const r = drRound();
+  const p = dr.pos;
+  const want = r.answers[p];
+  if (dr.fresh) { dr.states = {}; dr.fresh = false; }
+  if (dr.phase === 'listen') (dr.answers[dr.round] ||= { len: r.answers.length, notes: [] }).notes.push({ heard: want, answered: id });
+  if (!r.audition) { stopAll(); drSound(id); }
+  dr.pick = null;
+  if (id === want) {
+    dr.states = { ...dr.states, [id]: 'correct' };
+    if (p < r.answers.length - 1) {
+      dr.states = { [id]: 'correct' }; // the next chord or note starts with clean buttons
+      dr.pos++;
+      dr.phase = 'listen';
+      dr.fresh = true;
+    } else {
+      dr.phase = 'feedback';
+      timer = setTimeout(drAdvance, CORRECT_DELAY + drReveal());
+    }
+  } else {
+    dr.phase = 'retry';
+    dr.states = { ...dr.states, [id]: 'wrong' };
+  }
+  render();
+}
+
+/** After a round: a tune's whole phrase again, or the home chord of a key round. Returns its ms. */
+function drReveal() {
+  const r = drRound();
+  if (!ensureAudio()) return 0;
+  const kind = S.dr.drill.kind;
+  if (kind === 'tune' && r.full) {
+    const t = now() + 0.7;
+    return (drMelody(r.full, S.dr.tonic, r.bpm, t) - now()) * 1000;
+  }
+  if (kind === 'tonic' || kind === 'mode') {
+    stopAll();
+    strumChord(voicing(chordsFor(r.mode)[0], r.keyPc), now() + 0.05);
+    return 1200;
+  }
+  return 0;
+}
+
+function drAdvance() {
+  clearTimer();
+  const dr = S.dr;
+  if (!dr || dr.phase !== 'feedback') return;
+  dr.round++;
+  if (dr.round < ROUNDS) return drStartRound();
+  const score = dr.answers.filter(roundOk).length;
+  let newBest = false;
+  if (!dr.drill.single) {
+    const res = recordBest(S.progress, dr.drill.id, score);
+    S.progress = res.progress;
+    saveProgress(res.progress);
+    newBest = res.newBest;
+  }
+  dr.result = { score, newBest, passed: isPassed(score) };
+  dr.phase = 'done';
+  stopAll();
+  render();
+  window.scrollTo(0, 0);
+  if (dr.result.passed && ensureAudio()) playArpeggio([60, 64, 67, 72]);
+}
+
+function drPrompt() {
+  const dr = S.dr;
+  const r = drRound();
+  if (dr.phase === 'feedback') return drRevealText();
+  const miss = dr.phase === 'retry' ? 'Not that one. ' : '';
+  switch (dr.drill.kind) {
+    case 'quality': return `${miss}Major or minor chord?`;
+    case 'function': return `${miss}Which chord came after the cadence?`;
+    case 'progression': return `${miss}Chord ${dr.pos + r.given + 1} of ${r.chords.length}?`;
+    case 'named': return `${miss}Which progression is it?`;
+    case 'mode': return `${miss}Is this tune major or minor?`;
+    case 'tonic': return dr.pick != null
+      ? `Is <b>${esc(TONIC_LABELS[Number(dr.pick)])}</b> home? Try others, or press That's home.`
+      : `${miss}Where is home? Tap notes to hear them.`;
+    case 'tune': {
+      const found = r.answers.slice(0, dr.pos).map((a) => tuneNoteHTML(Number(a), r.keyPc, r.mode)).join(' → ');
+      return `${found ? `${found} → ` : ''}${miss}Note ${dr.pos + 1} of ${r.answers.length}?`;
+    }
+    default: return '';
+  }
+}
+
+function drRevealText() {
+  const dr = S.dr;
+  const r = drRound();
+  const lead = roundOk(dr.answers[dr.round]) ? 'Yes: ' : 'There it is: ';
+  const key = esc(keyName(r.keyPc, r.mode));
+  const from = r.tune ? ` <span class="muted">${esc(tuneById(r.tune).title)}</span>` : '';
+  switch (dr.drill.kind) {
+    case 'quality': return `${lead}${r.answers[0] === 'maj' ? 'major' : 'minor'}.`;
+    case 'function': return `${lead}${esc(r.chords[0])}, ${chordNames(r, r.chords)} in ${key}.`;
+    case 'progression': return `${lead}${r.chords.map(esc).join(' – ')}<br><span class="muted">${key}:</span> ${chordNames(r, r.chords)}`;
+    case 'named': {
+      const p = progressionById(r.prog);
+      return `${lead}${esc(p.name)}, ${p.slots.map(esc).join(' – ')}<br><span class="muted">${key}:</span> ${chordNames(r, p.slots)}`;
+    }
+    case 'mode': return `${lead}${r.mode}, ${key}.${from}`;
+    case 'tonic': return `${lead}home is ${esc(keyLetter(r.keyPc, r.mode))}, ${key}.${from}`;
+    case 'tune': return `${lead}${(r.full || r.melody).map((n) => tuneNoteHTML(n.o, r.keyPc, r.mode)).join(' ')}${from}`;
+    default: return '';
+  }
+}
+
+/** The chords of a progression round as slots: given ones shown, answered ones filled in, the current one marked. */
+function drSlotsHTML() {
+  const dr = S.dr;
+  const r = drRound();
+  const k = dr.drill.kind;
+  if (k !== 'progression' && !(k === 'named' && dr.phase === 'feedback')) return '';
+  const done = dr.phase === 'feedback';
+  return `<div class="slots drslots">${r.chords.map((n, i) => {
+    const shown = done || i < r.given + dr.pos;
+    const cur = !done && i === r.given + dr.pos;
+    const c = chordIn(r, n);
+    return `<span class="slot ${cur ? 'now' : ''}"><span class="snum">${shown ? numeralHTML(r.mode, n) : cur ? '?' : '·'}</span>${shown && (done || i < r.given) ? coloredName(c.root, chordName(c, r.keyPc, r.mode)) : '&nbsp;'}</span>`;
+  }).join('')}</div>`;
+}
+
+function drChoicesHTML() {
+  const dr = S.dr;
+  const r = drRound();
+  const off = dr.phase === 'feedback';
+  return `<div class="choices ${dr.drill.kind}">${r.choices.map((c, i) => {
+    const st = dr.states[c.id] || (dr.pick === c.id ? 'picked' : '');
+    return `<button class="choice ${st}" data-action="drtap" data-arg="${esc(c.id)}" data-focus-key="drtap-${esc(c.id)}"${off ? ' disabled' : ''}>
+      <span class="clabel">${drLabelHTML(dr.drill, c.id, r)}</span>${c.sub ? `<span class="snum">${esc(c.sub)}</span>` : ''}${i < 9 ? `<kbd>${i + 1}</kbd>` : ''}</button>`;
+  }).join('')}</div>`;
+}
+
+function drResultsHTML() {
+  const dr = S.dr;
+  const { score, newBest, passed } = dr.result;
+  const counts = new Map();
+  for (const n of dr.answers.flatMap((a) => a.notes)) {
+    if (n.heard === n.answered) continue;
+    const k = `${n.heard}>${n.answered}`;
+    counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  const mix = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => {
+    const [h, a] = k.split('>');
+    return `<li>It was <b>${drLabelHTML(dr.drill, h)}</b>, answered <b>${drLabelHTML(dr.drill, a)}</b>${n > 1 ? ` ×${n}` : ''}</li>`;
+  }).join('');
+  const step = stepOf(dr.drill.id) ? nextStep(S.progress, S.guides) : null;
+  const onPath = step != null && step.id !== dr.drill.id;
+  return `<div class="scorecard ${passed ? 'pass' : 'fail'}">
+        <p class="big"><b>${score}</b>/${ROUNDS}</p>
+        <p class="verdict">${score === ROUNDS ? 'Perfect.' : passed ? 'Well done.' : 'Keep practising.'}</p>
+        ${newBest ? '<p class="newbest">New best</p>' : ''}
+      </div>
+      ${mix ? `<h2 class="sub">Mix-ups</h2><ul class="confusions">${mix}</ul>` : ''}
+      <div class="actions">
+        ${btn(dr.back, 'Back', 'ghost')}
+        ${btn('drstart', 'Retry', onPath ? 'ghost' : 'primary')}
+        ${onPath ? btn('pathnext', 'Continue path', 'primary') : ''}
+      </div>
+      ${onPath ? `<p class="hint pathhint">Next on your path: <b>${esc(stepName(step))}</b></p>` : ''}`;
+}
+
+// ---------- songbook ----------
+
+const SB_BPM = 90; // tempo of a progression played from the songbook
+
+/** Schedule a tune (or one phrase of it) from now: melody and/or chords. */
+function sbPlayTune({ melody = true, chords = true, phrase = null } = {}) {
+  if (!ensureAudio()) return;
+  stopAll();
+  const tune = tuneById(S.sb.id);
+  const { key } = S.sb;
+  const beat = 60 / tune.bpm;
+  const tonic = tuneTonic(tune, key);
+  let notes = tuneNotes(tune);
+  let from = 0;
+  let to = Infinity;
+  if (phrase != null) {
+    const ph = tunePhrases(tune)[phrase];
+    from = ph[0].t;
+    to = ph[ph.length - 1].t + ph[ph.length - 1].b;
+    notes = notes.filter((n) => n.t >= from && n.t < to);
+  }
+  const t0 = now() + 0.1 - from * beat;
+  if (melody) playMelody(notes.filter((n) => n.o != null).map((n) => ({ midi: tonic + n.o, at: t0 + n.t * beat, dur: n.b * beat })), 0.95);
+  if (chords) {
+    const list = [];
+    for (const c of tuneChords(tune)) {
+      const notesC = voicing(chordByNumeral(tune.mode, c.numeral), key);
+      for (let b = 0; b < c.b; b += 2) {
+        const at = c.t + b;
+        if (at + 0.01 >= from && at < to) list.push({ notes: b ? notesC.slice(-3).reverse() : notesC, at: t0 + at * beat, gain: b ? 0.12 : 0.2 });
+      }
+    }
+    playChords(list);
+  }
+}
+
+/** A progression from the songbook: twice through (once for a twelve-bar form), strummed like the backing track. */
+function sbPlayProg() {
+  if (!ensureAudio()) return;
+  stopAll();
+  const p = progressionById(S.sb.id);
+  const chords = p.slots.map((n) => voicing(chordByNumeral(p.mode, n), S.sb.key));
+  const events = loopEvents(chords.length, SB_BPM, 1);
+  const cycle = cycleSeconds(chords.length, SB_BPM, 1);
+  const t0 = now() + 0.1;
+  const list = [];
+  for (let pass = 0; pass < (p.slots.length > 4 ? 1 : 2); pass++) {
+    for (const e of events) list.push({ notes: e.dir === 'up' ? chords[e.chord].slice(-3).reverse() : chords[e.chord], at: t0 + pass * cycle + e.t, gain: e.gain });
+  }
+  list.push({ notes: chords[0], at: t0 + (p.slots.length > 4 ? 1 : 2) * cycle, gain: 0.3 });
+  playChords(list);
+}
+
+function openSong(kind, id, back) {
+  const item = kind === 'tune' ? tuneById(id) : progressionById(id);
+  S.sb = { kind, id, key: item.key ?? 0, show: false, back };
+  go(kind === 'tune' ? 'tune' : 'prog');
+  if (ensureAudio()) prerender(ALL_SAMPLE_MIDIS);
+}
+
+const sbKeys = (mode) => Array.from({ length: 12 }, (_, pc) => `<button class="keychip ${pc === S.sb.key ? 'on' : ''}" data-action="sbkey" data-arg="${pc}" data-focus-key="sbkey-${pc}" aria-pressed="${pc === S.sb.key}">${esc(keyLetter(pc, mode))}</button>`).join('');
+
 // ---------- microphone ----------
 
 const micWanted = () =>
@@ -1348,6 +1882,36 @@ const ACTIONS = {
     render();
   },
   chapter: (arg) => { S.chapterId = arg; go('levels'); },
+  drills: () => go('drills'),
+  drill: (arg) => openDrill(drillById(arg), 'drills'),
+  drstart: () => drStart(),
+  drplay: () => drPlay(),
+  drtap: (arg) => drTap(arg),
+  drcommit: () => drCommit(S.dr?.pick),
+  drnext: () => drAdvance(),
+  songbook: () => go('songbook'),
+  sbtune: (arg) => openSong('tune', arg, S.screen === 'guide' ? 'guide' : 'songbook'),
+  sbprog: (arg) => openSong('prog', arg, S.screen === 'guide' ? 'guide' : 'songbook'),
+  tune: () => go('tune'),
+  prog: () => go('prog'),
+  sbkey: (arg) => { S.sb.key = Number(arg); stopAll(); render(); },
+  sbplay: () => sbPlayTune(),
+  sbmelody: () => sbPlayTune({ chords: false }),
+  sbchords: () => sbPlayTune({ melody: false }),
+  sbphrase: (arg) => sbPlayTune({ phrase: Number(arg), chords: false }),
+  sbstop: () => stopAll(),
+  sbshow: () => { S.sb.show = !S.sb.show; render(); },
+  sbpractise: () => openDrill(tuneDrill(S.sb.id), 'tune'),
+  sbprogplay: () => sbPlayProg(),
+  sbalong: () => {
+    const p = progressionById(S.sb.id);
+    Object.assign(S.bt, { key: S.sb.key, mode: p.mode, slots: [...p.slots], tempo: SB_BPM, bars: 1, sel: 0 });
+    saveBacking(S.bt);
+    S.btBack = 'prog';
+    go('backing');
+    btStart();
+    render();
+  },
   level: (arg) => openLevel(Number(arg)),
   key: (arg) => { S.keyPc = Number(arg); saveKey(S.keyPc); render(); },
   start: () => startLevel(),
@@ -1411,6 +1975,11 @@ function onClick(e) {
 function onKey(e) {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const n = Number(e.key);
+  if (n >= 1 && n <= 9 && S.screen === 'drill' && S.dr?.deck.length && S.dr.phase !== 'intro' && S.dr.phase !== 'done') {
+    const c = drRound().choices[n - 1];
+    if (c) { drTap(c.id); e.preventDefault(); }
+    return;
+  }
   if (n >= 1 && n <= 8 && (S.screen === 'play' || S.screen === 'explore')) {
     const d = degrees()[n - 1]; // keys 1–8 are the first eight notes of the level
     if (d != null) { ensureAudio(); tapDot(d); e.preventDefault(); }
@@ -1424,6 +1993,14 @@ function onKey(e) {
     else if (S.screen === 'play') (S.phase === 'feedback' ? advance() : replay());
     else if (S.screen === 'backing') ACTIONS.btplay();
     else if (S.screen === 'listen') listenPause();
+    else if (S.screen === 'drill') {
+      const ph = S.dr.phase;
+      if (ph === 'intro' || ph === 'done') drStart();
+      else if (ph === 'feedback') drAdvance();
+      else if (drRound().audition && S.dr.pick != null) drCommit(S.dr.pick);
+      else drPlay();
+    } else if (S.screen === 'tune') sbPlayTune();
+    else if (S.screen === 'prog') sbPlayProg();
     else if (S.screen === 'results') {
       const nxt = nextLevel(S.chapterId, S.level);
       if (nxt) ACTIONS.next();
