@@ -228,6 +228,10 @@ button { font: inherit; color: inherit; }
 .hero span, .fig span, .hero small, .fig small, .bn { color: var(--muted); }
 .stats section { display: flex; flex-direction: column; gap: 10px; }
 .stats .sub { margin: 0; }
+.chartblock { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; }
+.chartblock .sub { font-size: 11px; }
+.chart { display: block; width: 100%; height: auto; max-width: 560px; overflow: visible; }
+.chart-empty { margin: 0; color: var(--muted); }
 .hmwrap { overflow-x: auto; }
 .heatmap { display: grid; grid-template-rows: repeat(7, 1fr); grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px; min-width: 240px; max-width: 560px; }
 /* Heatmap squares: the one filled colour in the app (a data graphic), shades of the accent on black. */

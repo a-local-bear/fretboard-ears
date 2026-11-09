@@ -5,7 +5,7 @@
 
 export const SESSION_GAP_MS = 5 * 60 * 1000; // a longer pause starts a new session
 export const SESSION_LEAD_MS = 15 * 1000; // time credited for the first answer of a session
-export const STATS_VERSION = 2;
+export const STATS_VERSION = 3;
 
 const pad = (n) => String(n).padStart(2, '0');
 /** Local calendar day of a timestamp as YYYY-MM-DD. */
@@ -18,6 +18,13 @@ const addDays = (t, n) => {
   const d = new Date(t);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n, 12).getTime();
 };
+/** Local Monday (YYYY-MM-DD) of the week containing timestamp `t`. */
+export const weekKey = (t) => {
+  const d = new Date(t);
+  return dayKey(new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7), 12).getTime());
+};
+export const RT_BUCKET_MS = 50; // response times are kept as a histogram of 50 ms buckets
+export const RT_MAX_MS = 60000; // slower answers all land in the last bucket
 const dayBefore = (t, n) => dayKey(addDays(t, -n));
 
 const isNum = (x) => typeof x === 'number' && Number.isFinite(x);
@@ -41,6 +48,7 @@ export function emptyStats() {
   return {
     v: STATS_VERSION, notes: 0,
     days: {}, // dayKey → answers
+    weeks: {}, // Monday dayKey → { n, ok, heard, correct (per note), rt: { bucket → count } }
     heard: {}, correct: {}, // note offset → count (first-try)
     conf: {}, // "heard>answered" → count
     miss: { n: 0, tries: 0 }, // rounds that started with a miss, and total taps they needed
@@ -56,6 +64,12 @@ export function addEntry(agg, e) {
   agg.notes++;
   bump(agg.days, dayKey(e.t));
   bump(agg.heard, n.h);
+  const wk = weekKey(e.t);
+  const w = agg.weeks[wk] || (agg.weeks[wk] = { n: 0, ok: 0, heard: {}, correct: {}, rt: {} });
+  w.n++;
+  bump(w.heard, n.h);
+  if (n.h === n.a) { w.ok++; bump(w.correct, n.h); }
+  if (isNum(e.ms) && e.ms >= 0) bump(w.rt, Math.floor(Math.min(e.ms, RT_MAX_MS) / RT_BUCKET_MS));
   if (n.h === n.a) bump(agg.correct, n.h);
   else {
     bump(agg.conf, `${n.h}>${n.a}`);
@@ -72,7 +86,7 @@ export const buildStats = (entries) => (Array.isArray(entries) ? entries : []).r
 
 /** True if `x` looks like an aggregate we can keep adding to. */
 export const validStats = (x) =>
-  !!x && x.v === STATS_VERSION && isNum(x.notes) && typeof x.days === 'object' && typeof x.heard === 'object'
+  !!x && x.v === STATS_VERSION && isNum(x.notes) && typeof x.days === 'object' && !!x.weeks && typeof x.weeks === 'object' && typeof x.heard === 'object'
   && typeof x.correct === 'object' && typeof x.conf === 'object' && !!x.miss && !!x.rt && isNum(x.activeMs);
 
 // ---------- streaks and calendar ----------
@@ -174,4 +188,38 @@ export function trend(entries, now, days) {
   const r = accuracyOf(recent);
   const o = accuracyOf(earlier);
   return { recent: r, earlier: o, delta: r.acc != null && o.acc != null ? r.acc - o.acc : null };
+}
+
+// ---------- weekly series ----------
+
+/** Median (ms, bucket midpoint) of a response-time histogram, or null when empty. */
+export function histMedian(rt) {
+  const keys = Object.keys(rt || {}).map(Number).sort((a, b) => a - b);
+  const total = keys.reduce((s, k) => s + rt[k], 0);
+  if (!total) return null;
+  let seen = 0;
+  for (const k of keys) {
+    seen += rt[k];
+    if (seen * 2 >= total) return k * RT_BUCKET_MS + RT_BUCKET_MS / 2;
+  }
+  return null;
+}
+
+/**
+ * Consecutive weeks (Monday starts) from the first practised week to the one containing `now`,
+ * gaps included as empty weeks: [{ week, n, ok, acc, medianMs, heard, correct }].
+ */
+export function weeklySeries(agg, now) {
+  const keys = Object.keys(agg?.weeks || {}).sort();
+  if (!keys.length) return [];
+  const [y, m, d] = keys[0].split('-').map(Number);
+  const last = weekKey(Math.max(now, new Date(keys[keys.length - 1] + 'T12:00:00').getTime()));
+  const out = [];
+  for (let t = new Date(y, m - 1, d, 12).getTime(), k = weekKey(t); k <= last; t = addDays(t, 7), k = weekKey(t)) {
+    const w = agg.weeks[k];
+    out.push(w
+      ? { week: k, n: w.n, ok: w.ok, acc: w.n ? w.ok / w.n : null, medianMs: histMedian(w.rt), heard: w.heard, correct: w.correct }
+      : { week: k, n: 0, ok: 0, acc: null, medianMs: null, heard: {}, correct: {} });
+  }
+  return out;
 }

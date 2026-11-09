@@ -15,6 +15,7 @@ import {
 import {
   streaks, heatmap, totals, degreeAccuracy, topConfusions, triesAfterMiss, avgResponseMs, trend,
 } from './stats.js';
+import { progressHTML } from './charts.js';
 import {
   ensureAudio, prerender, playNote, playReference, playArpeggio, stopAll, now, setSound, setNoteLimit, quietAt,
 } from './audio.js';
@@ -308,6 +309,7 @@ const SCREENS = {
           ${fig(ms == null ? '–' : `${(ms / 1000).toFixed(1)}s`, 'response time', ms == null ? 'not timed yet' : 'to first tap')}
         </div>
       </section>
+      <section class="progress"><h2 class="sub">Progress</h2>${progressHTML(agg, at)}</section>
     </main>`;
   },
 
