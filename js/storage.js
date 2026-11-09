@@ -1,8 +1,9 @@
 // localStorage wrappers. Every access is guarded: storage can be missing or throw.
 
 import { emptyProgress } from './progress.js';
+import { addEntry, buildStats, validStats } from './stats.js';
 
-const KEYS = { settings: 'fe-settings', progress: 'fe-progress', log: 'fe-log' };
+const KEYS = { settings: 'fe-settings', progress: 'fe-progress', log: 'fe-log', stats: 'fe-stats' };
 const LOG_MAX = 5000;
 const DEFAULT_SETTINGS = { labels: 'solfege', ref: 'cadence', sound: 'guitar', mic: false };
 
@@ -33,10 +34,25 @@ export function loadProgress() {
 }
 export const saveProgress = (p) => write(KEYS.progress, p);
 
-/** Append answer entries, keeping only the newest LOG_MAX. */
-export function appendLog(entries) {
+export function loadLog() {
   const log = read(KEYS.log);
-  const next = (Array.isArray(log) ? log : []).concat(entries);
+  return Array.isArray(log) ? log : [];
+}
+
+/** Lifetime aggregate. Built from the log the first time (or if it is unreadable). */
+export function loadStats() {
+  const s = read(KEYS.stats);
+  if (validStats(s)) return s;
+  const built = buildStats(loadLog());
+  write(KEYS.stats, built);
+  return built;
+}
+
+/** Append answer entries, keeping only the newest LOG_MAX; the stats aggregate keeps everything. */
+export function appendLog(entries) {
+  const stats = loadStats(); // before the append, so a first-time build doesn't count entries twice
+  write(KEYS.stats, entries.reduce(addEntry, stats));
+  const next = loadLog().concat(entries);
   write(KEYS.log, next.length > LOG_MAX ? next.slice(-LOG_MAX) : next);
 }
 

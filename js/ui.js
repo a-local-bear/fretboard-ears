@@ -8,7 +8,12 @@ import { buildDeck } from './deck.js';
 import {
   isPassed, bestScore, recordScore, nextLevel, playedCount,
 } from './progress.js';
-import { loadSettings, saveSettings, loadProgress, saveProgress, appendLog, requestPersistence } from './storage.js';
+import {
+  loadSettings, saveSettings, loadProgress, saveProgress, appendLog, requestPersistence, loadStats, loadLog,
+} from './storage.js';
+import {
+  streaks, heatmap, totals, degreeAccuracy, topConfusions, triesAfterMiss, avgResponseMs, trend,
+} from './stats.js';
 import {
   ensureAudio, prerender, playNote, playReference, playArpeggio, stopAll, now, setSound, setNoteLimit, quietAt,
 } from './audio.js';
@@ -21,7 +26,7 @@ const MIC_NOTE_LIMIT = 1.6; // seconds the app's notes may ring while the mic li
 const VERTICAL_BELOW = 640;
 
 const S = {
-  screen: 'home', // home | levels | explore | play | results | settings
+  screen: 'home', // home | levels | explore | play | results | settings | stats
   chapterId: 'one',
   level: 0,
   deck: [],
@@ -31,6 +36,8 @@ const S = {
   tries: 0, // taps in the current round
   states: {}, // degree → dot state for the current round
   noteAt: 0, // context time of the current mystery note
+  noteMs: null, // ms from the mystery note sounding to the first tap (null if unknown)
+  stats: null, // snapshot for the stats screen, taken when it opens
   result: null, // { score, newBest, passed }
   confirmReset: false,
   mic: 'off', // off | starting | on | blocked (runtime state; the wish to use it is settings.mic)
@@ -107,6 +114,7 @@ const SCREENS = {
           </button></li>`;
         }).join('')}
       </ol>
+      <div class="actions">${btn('stats', 'Practice stats', 'ghost')}</div>
     </main>`;
   },
 
@@ -198,6 +206,72 @@ const SCREENS = {
     </main>`;
   },
 
+  stats() {
+    const { agg, log, now: at } = S.stats;
+    const tot = totals(agg);
+    const topbarHTML = topbar('Practice stats', 'home');
+    if (!tot.notes) {
+      return `${topbarHTML}
+    <main class="screen stats">
+      <div class="emptystate">
+        <p class="big">No notes yet</p>
+        <p class="lede">Play a level and your streak, accuracy and mix-ups will show up here.</p>
+        ${btn('home', 'Pick a chapter', 'primary')}
+      </div>
+    </main>`;
+    }
+    const { current, best } = streaks(agg.days, at);
+    const cols = heatmap(agg.days, at, 16);
+    const cells = cols.map((col) => col.map((c) => c
+      ? `<i class="hm l${c.level}" title="${c.key}: ${c.count} note${c.count === 1 ? '' : 's'}"></i>`
+      : '<i class="hm none"></i>').join('')).join('');
+    const pct = (x) => `${Math.round(x * 100)}%`;
+    const bars = degreeAccuracy(agg).map((d) => `<li class="bar">
+        <span class="bname">${esc(S.settings.labels === 'letters' ? LETTERS[d.degree] : SOLFEGE[d.degree])}</span>
+        <span class="track"><i style="--c:${DEGREE_COLORS[d.degree] || '#a8998a'};width:${Math.round(d.acc * 100)}%"></i></span>
+        <span class="bval">${pct(d.acc)}</span>
+        <span class="bn">${d.heard}</span></li>`).join('');
+    const conf = topConfusions(agg, 3).map((c) =>
+      `<li>Heard <b>${esc(noteName(c.heard))}</b>, answered <b>${esc(noteName(c.answered))}</b> <span class="muted">×${c.n}</span></li>`).join('');
+    const t7 = trend(log, at, 7);
+    const t30 = trend(log, at, 30);
+    const trendFig = (t, label) => {
+      const val = t.recent.acc == null ? '–' : pct(t.recent.acc);
+      let note = 'no earlier data';
+      if (t.delta != null) {
+        const d = Math.round(t.delta * 100);
+        note = d === 0 ? 'same as before' : `${d > 0 ? '+' : ''}${d} pts vs earlier`;
+      } else if (t.recent.acc == null) note = 'no notes yet';
+      return fig(val, label, note);
+    };
+    const fig = (v, label, note = '') =>
+      `<div class="fig"><b>${v}</b><span>${label}</span>${note ? `<small>${note}</small>` : ''}</div>`;
+    const miss = triesAfterMiss(agg);
+    const ms = avgResponseMs(agg);
+    return `${topbarHTML}
+    <main class="screen stats">
+      <div class="hero">
+        <div><b>${current}</b><span>day streak</span><small>best ${best}</small></div>
+        <div><b>${tot.notes.toLocaleString()}</b><span>notes</span><small>${tot.days} day${tot.days === 1 ? '' : 's'}${tot.minutes ? `, about ${tot.minutes} min` : ''}</small></div>
+      </div>
+      <section><h2 class="sub">Last 16 weeks</h2>
+        <div class="hmwrap"><div class="heatmap" role="img" aria-label="Practice calendar for the last 16 weeks, ${tot.days} practice days in total">${cells}</div></div>
+      </section>
+      <section><h2 class="sub">First-try accuracy by note</h2>
+        <ul class="bars">${bars}</ul>
+      </section>
+      ${conf ? `<section><h2 class="sub">Top mix-ups</h2><ul class="confusions">${conf}</ul></section>` : ''}
+      <section><h2 class="sub">Lately</h2>
+        <div class="figs">
+          ${trendFig(t7, 'last 7 days')}
+          ${trendFig(t30, 'last 30 days')}
+          ${fig(miss == null ? '–' : miss.toFixed(1), 'taps to recover', miss == null ? 'no misses yet' : 'after a miss')}
+          ${fig(ms == null ? '–' : `${(ms / 1000).toFixed(1)}s`, 'response time', ms == null ? 'not timed yet' : 'to first tap')}
+        </div>
+      </section>
+    </main>`;
+  },
+
   settings() {
     const seg = (key, opts) => `<div class="seg" role="radiogroup">${opts.map(([v, label]) =>
       `<button role="radio" aria-checked="${S.settings[key] === v}" class="${S.settings[key] === v ? 'on' : ''}" data-action="set" data-arg="${key}:${v}" data-focus-key="set-${key}-${v}">${label}</button>`).join('')}</div>`;
@@ -259,6 +333,8 @@ function startRound() {
   stopAll();
   S.phase = 'listen';
   S.states = {};
+  S.noteMs = null;
+  S.noteAt = 0;
   render();
   if (!ensureAudio()) return;
   const doMidi = midiOf(chapter().notes[0]);
@@ -284,6 +360,7 @@ function answer(d, fromMic = false) {
   if (S.phase === 'listen') {
     S.answers.push({ heard, answered: d });
     S.tries = 0;
+    S.noteMs = S.noteAt ? Math.max(0, Math.round((now() - S.noteAt) * 1000)) : null;
   }
   S.tries++;
   stopAll();
@@ -293,7 +370,7 @@ function answer(d, fromMic = false) {
     S.states = { ...S.states, [d]: 'correct' };
     appendLog([{
       t: Date.now(), ch: S.chapterId, lvl: S.level, heard, answered: S.answers[S.answers.length - 1].answered,
-      tries: S.tries, ref: S.settings.ref, labels: S.settings.labels,
+      tries: S.tries, ms: S.noteMs, ref: S.settings.ref, labels: S.settings.labels,
     }]);
     timer = setTimeout(advance, CORRECT_DELAY);
   } else {
@@ -404,6 +481,7 @@ function onMicNote(midi) {
 const ACTIONS = {
   home: () => go('home'),
   settings: () => go('settings'),
+  stats: () => { S.stats = { agg: loadStats(), log: loadLog(), now: Date.now() }; go('stats'); },
   levels: () => go('levels'),
   chapter: (arg) => { S.chapterId = arg; go('levels'); },
   level: (arg) => openLevel(Number(arg)),

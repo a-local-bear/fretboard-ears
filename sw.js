@@ -22,6 +22,7 @@ const PRECACHE = [
   "js/pitch.js",
   "js/progress.js",
   "js/samples.js",
+  "js/stats.js",
   "js/storage.js",
   "js/ui.js",
   "manifest.webmanifest",
