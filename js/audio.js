@@ -306,6 +306,27 @@ export function playOver(chord, midi) {
   return t + OVER_TO_NOTE;
 }
 
+/**
+ * Call `fn` when the context clock reaches `when`. It fires on a silent node's `ended` event,
+ * which keeps time in a background tab where timers are throttled. Returns a cancel function.
+ */
+export function callAt(when, fn) {
+  if (!ctx) return () => {};
+  let live = true;
+  const src = ctx.createConstantSource ? ctx.createConstantSource() : ctx.createOscillator();
+  const mute = ctx.createGain();
+  mute.gain.value = 0;
+  src.connect(mute).connect(ctx.destination);
+  src.onended = () => {
+    src.disconnect();
+    mute.disconnect();
+    if (live) { live = false; fn(); }
+  };
+  src.start();
+  src.stop(Math.max(when, ctx.currentTime + 0.001));
+  return () => { live = false; };
+}
+
 /** Do-Mi-Sol-Do arpeggio for a pass. */
 export function playArpeggio(midis) {
   const t = now() + 0.05;

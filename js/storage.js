@@ -3,10 +3,11 @@
 import { normalizeProgress } from './progress.js';
 import { OVER_OPTIONS, normalizeBacking } from './harmony.js';
 import { addEntry, buildStats, validStats } from './stats.js';
+import { GAP_OPTIONS } from './listen.js';
 
 const KEYS = { settings: 'fe-settings', progress: 'fe-progress', log: 'fe-log', stats: 'fe-stats', key: 'fe-key', backing: 'fe-backing' };
 const LOG_MAX = 5000;
-const DEFAULT_SETTINGS = { labels: 'solfege', ref: 'cadence', refWhen: 'each', resolve: 'on', over: 'off', sound: 'guitar', mic: false, adaptive: 'off' };
+const DEFAULT_SETTINGS = { labels: 'solfege', ref: 'cadence', refWhen: 'each', resolve: 'on', over: 'off', sound: 'guitar', mic: false, adaptive: 'off', listenGap: '5', listenSpeak: 'on' };
 
 function read(key) {
   try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
@@ -26,6 +27,8 @@ export function loadSettings() {
     sound: ['guitar', 'synth'].includes(s.sound) ? s.sound : DEFAULT_SETTINGS.sound,
     mic: s.mic === true,
     adaptive: ['on', 'off'].includes(s.adaptive) ? s.adaptive : DEFAULT_SETTINGS.adaptive,
+    listenGap: GAP_OPTIONS.includes(s.listenGap) ? s.listenGap : DEFAULT_SETTINGS.listenGap,
+    listenSpeak: ['on', 'off'].includes(s.listenSpeak) ? s.listenSpeak : DEFAULT_SETTINGS.listenSpeak,
   };
 }
 export const saveSettings = (s) => write(KEYS.settings, s);

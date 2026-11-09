@@ -299,3 +299,7 @@ button { font: inherit; color: inherit; }
 .dot.chord .ring { stroke: var(--c); stroke-width: 1; opacity: 0.45; }
 .dot.dim { opacity: 0.38; }
 .dot.dim:hover { opacity: 0.8; }
+
+/* ---------- passive listening ---------- */
+.listen .lsopts { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 8px; text-align: center; }
+.listen .lsopts .hint { max-width: 46ch; }

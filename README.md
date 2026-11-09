@@ -13,6 +13,7 @@ The goal is to learn intervals by ear and play what you can sing.
 - **Degree pairs, melodic dictation and sing-and-find**, to move from single notes to playing back phrases.
 - **Each answer resolves to Do**, so you feel every note's pull to the tonic.
 - **References:** cadence, Do, drone, or nothing. Optionally the note sounds over a chord.
+- **Listen hands-free**: a level plays itself, with the note, a pause to play it, then the answer spoken and resolved. Nothing is scored.
 - **Backing track** with a few looping chords of your choice to play over.
 - **Daily practice session, adaptive practice and stats**: streaks, accuracy per note, mix-ups and progress graphs.
 
