@@ -1,22 +1,22 @@
 // SVG fretboard as a string. Horizontal (high e on top, like tab) or vertical (nut at top, low E left).
 
-import { STRING_NAMES, SOLFEGE, LETTERS, DEGREE_COLORS } from './data.js';
+import { STRING_NAMES, noteColor } from './data.js';
 
 const INLAYS = [3, 5, 7, 9, 15, 17];
 
 /**
  * @param {object} o
- * @param {Array<[number,number]>} o.notes    chapter notes, Do → Do'
- * @param {number[]} o.degrees                degrees shown as dots
- * @param {'solfege'|'letters'|'hidden'} o.labels
+ * @param {Array<{id:number, pos:[number,number]}>} o.dots  one per dot; `id` is the note (semitones above the tonic)
+ * @param {{lo:number, hi:number}} o.frame  first and last fret column drawn
+ * @param {(id:number)=>string} o.labelOf   dot text ('' for none)
+ * @param {(id:number)=>string} o.nameOf    spoken name of a note
+ * @param {boolean} o.hidden                plain dots, no names or colours
  * @param {boolean} o.vertical
- * @param {Record<number,string>} [o.states]  degree → 'correct' | 'wrong' | 'reveal' | 'playing'
+ * @param {Record<number,string>} [o.states]  note id → 'correct' | 'wrong' | 'reveal' | 'playing'
  * @param {boolean} [o.disabled]
  */
-export function fretboardSVG({ notes, degrees, labels, vertical, states = {}, disabled = false }) {
-  const frets = notes.map((n) => n[1]);
-  const lo = Math.max(0, Math.min(...frets) - 1);
-  const hi = Math.max(...frets) + 1;
+export function fretboardSVG({ dots, frame, labelOf, nameOf, hidden = false, vertical, states = {}, disabled = false }) {
+  const { lo, hi } = frame;
   const cells = hi - lo;
 
   // Geometry in viewBox units. "along" = direction of the neck, "across" = strings.
@@ -88,16 +88,13 @@ export function fretboardSVG({ notes, degrees, labels, vertical, states = {}, di
   }
 
   // Dots
-  for (const d of degrees) {
-    const [st, f] = notes[d];
+  for (const { id: d, pos: [st, f] } of dots) {
     const [x, y] = P(cellAlong(f), stringAcross(st));
     const state = states[d] || '';
-    const hidden = labels === 'hidden';
-    const fill = hidden ? 'var(--dot-neutral)' : DEGREE_COLORS[d];
-    const text = hidden ? '' : labels === 'letters' ? LETTERS[d] : SOLFEGE[d];
-    const name = SOLFEGE[d];
+    const fill = hidden ? 'var(--dot-neutral)' : noteColor(d);
+    const text = hidden ? '' : labelOf(d);
     s += `<g class="dot ${state}${hidden ? ' neutral' : ''}" data-action="tap" data-degree="${d}" transform="translate(${fnum(x)} ${fnum(y)})"` +
-      ` role="button" tabindex="${disabled ? -1 : 0}" aria-label="${hidden ? `String ${STRING_NAMES[st]}, fret ${f}` : name}">` +
+      ` role="button" tabindex="${disabled ? -1 : 0}" aria-label="${hidden ? `String ${STRING_NAMES[st]}, fret ${f}` : nameOf(d)}">` +
       `<circle class="ring" r="${r + 5}"/>` +
       `<circle class="disc" r="${r}" style="--c:${fill}"/>` +
       (text ? `<text class="dlabel" y="0.5" font-size="${text.length > 2 ? 10.5 : 12}">${text}</text>` : '') +
