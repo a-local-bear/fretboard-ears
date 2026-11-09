@@ -9,7 +9,9 @@ let out = null; // input of the shared chain: lowpass → master → compressor 
 let sound = 'guitar'; // 'guitar' (recorded samples) | 'synth' (Karplus–Strong)
 const buffers = new Map(); // midi → synth entry { buffer, rate, gain }
 const samples = new Map(); // midi → decoded sample entry { buffer, rate, gain }
-const voices = new Set(); // { src, gain }
+const voices = new Set(); // { src, gain, endAt }
+let fadingUntil = 0; // end of the latest stopAll() fade
+let noteLimit = null; // seconds; set while the mic listens so notes don't ring for long
 
 const CHORD_GAP = 0.7; // seconds between cadence chords
 const CADENCE_TO_NOTE = 1.15;
@@ -43,6 +45,19 @@ export function ensureAudio() {
 }
 
 export const now = () => (ctx ? ctx.currentTime : 0);
+export const getContext = () => ctx;
+
+/** Cap how long any note rings (null = natural length). Used while the mic is listening. */
+export function setNoteLimit(seconds) {
+  noteLimit = seconds;
+}
+
+/** Context time when everything the app has played or scheduled will have finished. */
+export function quietAt() {
+  let t = fadingUntil;
+  for (const v of voices) t = Math.max(t, v.endAt);
+  return t;
+}
 
 /** Samples need less high-cut than the synth. */
 function applyTone() {
@@ -108,14 +123,17 @@ export function playNote(midi, when = now(), gain = 0.9) {
   const g = ctx.createGain();
   g.gain.value = gain * level;
   src.connect(g).connect(out);
-  src.start(Math.max(when, ctx.currentTime));
-  const voice = { src, gain: g };
+  const start = Math.max(when, ctx.currentTime);
+  src.start(start);
+  const voice = { src, gain: g, endAt: start + buffer.duration / rate };
   voices.add(voice);
   src.onended = () => voices.delete(voice);
+  if (noteLimit && voice.endAt > start + noteLimit) fadeVoice(voice, start + noteLimit, 0.15);
   return voice;
 }
 
 function fadeVoice(v, at, dur) {
+  v.endAt = Math.min(v.endAt, at + dur);
   try {
     v.gain.gain.cancelScheduledValues(at);
     v.gain.gain.setValueAtTime(v.gain.gain.value, at);
@@ -130,6 +148,7 @@ export function stopAll(dur = 0.06) {
   const t = ctx.currentTime;
   for (const v of voices) fadeVoice(v, t, dur);
   voices.clear();
+  fadingUntil = t + dur;
 }
 
 function strum(notes, when, gain = 0.3) {

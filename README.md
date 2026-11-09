@@ -49,6 +49,8 @@ Node is only used to run the tests. There are no npm packages.
 | `js/ks.js` | Karplus–Strong synthesis (pure) |
 | `js/audio.js` | Web Audio playback and scheduling; switches between samples and synth |
 | `js/samples.js` | Loads, trims and normalises the guitar samples |
+| `js/pitch.js` | Pitch detection and note tracking (pure) |
+| `js/mic.js` | Microphone input; listens only while the app is quiet |
 | `js/fretboard.js` | SVG fretboard |
 | `js/storage.js` | localStorage, persistence request, answer log |
 | `js/ui.js` | State, screens, input |
@@ -75,8 +77,19 @@ Re-download them with `python3 tools/fetch_samples.py`.
 Settings → Sound switches to **Synth**, the original Karplus–Strong plucked string (`js/ks.js`).
 The synth also plays any note whose sample hasn't loaded yet.
 
+## Microphone
+
+Tap the mic button on the explore or play screen to answer by playing the note on your guitar.
+- Any octave counts: the note name has to match. Do and Do' are both C.
+- A wrong note from the level counts like a wrong tap. Notes outside the level are shown next to the mic button but ignored.
+- The mic ignores everything while the app is playing, so the reference and the mystery note can't answer for you. While the mic is on, the app's notes are cut to 1.6 s so you can answer sooner.
+- On the explore screen, playing a note lights its dot, so you can check the mic hears you.
+- The mic only works over HTTPS (GitHub Pages) or on localhost.
+
+Pitch detection is the McLeod pitch method in `js/pitch.js`, with no libraries. Browser voice processing (echo cancellation, noise suppression, auto gain) is turned off because it distorts sustained notes.
+
 ## Stored data (localStorage)
 
-- `fe-settings`: `{labels: "solfege"|"letters"|"hidden", ref: "cadence"|"do"|"none", sound: "guitar"|"synth"}`
+- `fe-settings`: `{labels: "solfege"|"letters"|"hidden", ref: "cadence"|"do"|"none", sound: "guitar"|"synth", mic: true|false}`
 - `fe-progress`: `{best: {"<chapter>-<level>": 0..10}}`. Every level is open; there is no unlocking. Chapter ids are `one`, `pA`, `pB` and `pC`. Levels are numbered from 0.
 - `fe-log`: the last 5000 rounds as `{t, ch, lvl, heard, answered, tries, ref, labels}`. `answered` is the first tap, `tries` the taps needed to find the note. Degrees run 0 = Do to 7 = Do'.

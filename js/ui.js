@@ -9,10 +9,15 @@ import {
   isPassed, bestScore, recordScore, nextLevel, playedCount,
 } from './progress.js';
 import { loadSettings, saveSettings, loadProgress, saveProgress, appendLog, requestPersistence } from './storage.js';
-import { ensureAudio, prerender, playNote, playReference, playArpeggio, stopAll, now, setSound } from './audio.js';
+import {
+  ensureAudio, prerender, playNote, playReference, playArpeggio, stopAll, now, setSound, setNoteLimit, quietAt,
+} from './audio.js';
 import { fretboardSVG } from './fretboard.js';
+import { startMic, stopMic, micActive, micSupported } from './mic.js';
+import { matchDegree, SHARP_NAMES } from './pitch.js';
 
 const CORRECT_DELAY = 1100;
+const MIC_NOTE_LIMIT = 1.6; // seconds the app's notes may ring while the mic listens
 const VERTICAL_BELOW = 640;
 
 const S = {
@@ -28,6 +33,7 @@ const S = {
   noteAt: 0, // context time of the current mystery note
   result: null, // { score, newBest, passed }
   confirmReset: false,
+  mic: 'off', // off | starting | on | blocked (runtime state; the wish to use it is settings.mic)
   settings: loadSettings(),
   progress: loadProgress(),
   vertical: window.innerWidth < VERTICAL_BELOW,
@@ -47,9 +53,11 @@ const clearTimer = () => { clearTimeout(timer); timer = null; };
 // ---------- rendering ----------
 
 function render() {
+  syncMic();
   const html = SCREENS[S.screen]();
   if (html === lastHTML) return;
   lastHTML = html;
+  lastHearing = ''; // the hearing label was re-created empty
   const focusKey = document.activeElement?.dataset?.focusKey;
   app.innerHTML = html;
   if (focusKey) app.querySelector(`[data-focus-key="${focusKey}"]`)?.focus();
@@ -68,6 +76,19 @@ const topbar = (title, back) => `
 const board = (opts = {}) => fretboardSVG({
   notes: chapter().notes, degrees: degrees(), labels: S.settings.labels, vertical: S.vertical, ...opts,
 });
+
+const MIC_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
+
+function micBar() {
+  if (!micSupported()) return '';
+  const on = S.settings.mic;
+  const label = !on ? 'Mic off' : S.mic === 'on' ? 'Listening' : S.mic === 'blocked' ? 'Mic blocked' : 'Starting mic…';
+  return `<div class="micbar">
+      <button class="micbtn ${on && S.mic === 'on' ? 'on' : ''}" data-action="mic" data-focus-key="mic" aria-pressed="${on}">${MIC_ICON}<span>${label}</span></button>
+      <span class="hearing" id="hearing"></span>
+    </div>
+    ${on && S.mic === 'blocked' ? '<p class="micnote">The microphone is blocked. Allow it for this site in your browser settings, then turn the mic off and on again.</p>' : ''}`;
+}
 
 const refLabel = () => (S.settings.ref === 'do' ? 'Hear Do' : 'Hear key');
 
@@ -114,7 +135,8 @@ const SCREENS = {
     const newest = ds[ds.length - 1];
     return `${topbar(`Level ${S.level + 1}`, 'levels')}
     <main class="screen explore">
-      <p class="lede">New note: <b>${esc(SOLFEGE[newest])}</b>${S.settings.labels === 'letters' ? ` (${LETTERS[newest]})` : ''}. Tap the dots to hear each one, then start.</p>
+      <p class="lede">New note: <b>${esc(SOLFEGE[newest])}</b>${S.settings.labels === 'letters' ? ` (${LETTERS[newest]})` : ''}. ${S.mic === 'on' ? 'Tap the dots to hear each one, or play them to check the mic hears you' : 'Tap the dots to hear each one'}, then start.</p>
+      ${micBar()}
       <div class="boardwrap">${board({ states: S.states })}</div>
       <div class="actions">
         ${btn('reference', refLabel(), 'ghost')}
@@ -137,6 +159,7 @@ const SCREENS = {
         <span class="count">${Math.min(S.round + 1, ROUNDS)}/${ROUNDS}</span>
       </div>
       <p class="prompt">${promptText()}</p>
+      ${micBar()}
       <div class="boardwrap">${board({ states: S.states, disabled: S.phase === 'feedback' })}</div>
       <div class="actions">
         ${btn('reference', refLabel(), 'ghost')}
@@ -195,7 +218,7 @@ const SCREENS = {
 function promptText() {
   const a = S.answers[S.answers.length - 1];
   if (S.phase === 'retry') return 'Not that one. Keep looking.';
-  if (S.phase !== 'feedback' || !a) return 'Which note was that?';
+  if (S.phase !== 'feedback' || !a) return S.mic === 'on' ? 'Which note was that? Play it or tap it.' : 'Which note was that?';
   return a.heard === a.answered
     ? `Yes, ${esc(noteName(a.heard))}.`
     : `There it is: ${esc(noteName(a.heard))}.`;
@@ -254,7 +277,7 @@ function replay() {
  * Only the first tap of a round counts. After a miss the player keeps tapping (each wrong dot
  * turns red and plays its note) until they find the right one; then the round moves on.
  */
-function answer(d) {
+function answer(d, fromMic = false) {
   if (S.phase !== 'listen' && S.phase !== 'retry') return;
   const heard = S.deck[S.round];
   const ok = d === heard;
@@ -264,7 +287,7 @@ function answer(d) {
   }
   S.tries++;
   stopAll();
-  playNote(midiOf(chapter().notes[d]), now() + 0.03);
+  if (!fromMic) playNote(midiOf(chapter().notes[d]), now() + 0.03);
   if (ok) {
     S.phase = 'feedback';
     S.states = { ...S.states, [d]: 'correct' };
@@ -319,6 +342,63 @@ function tapDot(d) {
   }
 }
 
+// ---------- microphone ----------
+
+const micWanted = () =>
+  S.settings.mic && (S.screen === 'explore' || S.screen === 'play') && document.visibilityState === 'visible';
+
+/** Start or stop the mic to match the current screen and setting. Idempotent; called on every render. */
+function syncMic() {
+  if (!micSupported()) return;
+  if (micWanted()) {
+    if (!micActive() && S.mic === 'off') startListening();
+  } else if (micActive() || S.mic === 'on') {
+    stopMic();
+    setNoteLimit(null);
+    S.mic = S.mic === 'blocked' ? 'blocked' : 'off';
+  }
+}
+
+async function startListening() {
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  S.mic = 'starting';
+  setNoteLimit(MIC_NOTE_LIMIT);
+  try {
+    await startMic(ctx, { quietAt, onNote: onMicNote, onHear: showHearing });
+    S.mic = 'on';
+    if (!micWanted()) { stopMic(); setNoteLimit(null); S.mic = 'off'; }
+  } catch {
+    S.mic = 'blocked';
+    setNoteLimit(null);
+  }
+  render();
+}
+
+let lastHearing = '';
+function showHearing(info) {
+  const text = info ? `${SHARP_NAMES[((info.midi % 12) + 12) % 12]} ${info.cents > 0 ? '+' : ''}${info.cents}¢` : '';
+  if (text === lastHearing) return;
+  lastHearing = text;
+  const el = document.getElementById('hearing');
+  if (el) el.textContent = text;
+}
+
+function onMicNote(midi) {
+  const degreeMidis = [];
+  for (const d of degrees()) degreeMidis[d] = midiOf(chapter().notes[d]);
+  const { degree } = matchDegree(midi, degreeMidis);
+  if (degree == null) return; // not a note of this level
+  if (S.screen === 'explore') {
+    S.states = { [degree]: 'playing' };
+    render();
+    clearTimer();
+    timer = setTimeout(() => { S.states = {}; render(); }, 600);
+  } else if (S.screen === 'play') {
+    answer(degree, true);
+  }
+}
+
 // ---------- input ----------
 
 const ACTIONS = {
@@ -329,6 +409,12 @@ const ACTIONS = {
   level: (arg) => openLevel(Number(arg)),
   start: () => startLevel(),
   reference: () => playReferenceOnly(),
+  mic: () => {
+    S.settings = { ...S.settings, mic: !S.settings.mic };
+    saveSettings(S.settings);
+    if (S.mic === 'blocked') S.mic = 'off'; // the next "on" tries again
+    render();
+  },
   replay: () => replay(),
   tap: (_, el) => tapDot(Number(el.dataset.degree)),
   retry: () => openLevel(S.level),
@@ -405,5 +491,6 @@ export function mount(root) {
   });
   document.addEventListener('keydown', onKey);
   window.addEventListener('resize', onResize);
+  document.addEventListener('visibilitychange', () => render());
   render();
 }

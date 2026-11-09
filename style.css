@@ -168,3 +168,15 @@ button { font: inherit; color: inherit; }
   .topbar h1 { font-size: 19px; }
   .actions .btn { flex: 1 1 0; }
 }
+
+/* ---------- microphone ---------- */
+.micbar { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 40px; }
+.micbtn { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-weight: 700; cursor: pointer; }
+.micbtn:hover { border-color: var(--muted); }
+.micbtn[aria-pressed="true"] { color: var(--ink); }
+.micbtn.on { border-color: var(--accent); color: var(--accent); }
+.micbtn.on svg { animation: none; }
+@media (prefers-reduced-motion: no-preference) { .micbtn.on svg { animation: listen 1.6s ease-in-out infinite; } }
+@keyframes listen { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+.hearing { min-width: 5.5em; font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 700; }
+.micnote { margin: 0; text-align: center; color: var(--bad); font-size: 14px; text-wrap: balance; }

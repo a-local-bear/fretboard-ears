@@ -4,7 +4,7 @@ import { emptyProgress } from './progress.js';
 
 const KEYS = { settings: 'fe-settings', progress: 'fe-progress', log: 'fe-log' };
 const LOG_MAX = 5000;
-const DEFAULT_SETTINGS = { labels: 'solfege', ref: 'cadence', sound: 'guitar' };
+const DEFAULT_SETTINGS = { labels: 'solfege', ref: 'cadence', sound: 'guitar', mic: false };
 
 function read(key) {
   try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
@@ -19,6 +19,7 @@ export function loadSettings() {
     labels: ['solfege', 'letters', 'hidden'].includes(s.labels) ? s.labels : DEFAULT_SETTINGS.labels,
     ref: ['cadence', 'do', 'none'].includes(s.ref) ? s.ref : DEFAULT_SETTINGS.ref,
     sound: ['guitar', 'synth'].includes(s.sound) ? s.sound : DEFAULT_SETTINGS.sound,
+    mic: s.mic === true,
   };
 }
 export const saveSettings = (s) => write(KEYS.settings, s);
