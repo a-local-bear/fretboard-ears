@@ -42,6 +42,22 @@ test('guides have deep text, valid examples and a valid backing loop', () => {
   }
 });
 
+test('no guide text names a chord by letter or a fretboard position', () => {
+  const chordName = /\b[A-G][♯♭]?(m|maj|min)?\b(?= chord| major| minor|,| and| or)/;
+  for (const g of guides) {
+    for (const t of [...guideParagraphs(g), ...g.tries]) {
+      assert.ok(!chordName.test(t), `${g.id}: letter chord name in "${t}"`);
+      assert.ok(!(/string/i.test(t) && /fret/i.test(t)), `${g.id}: fretboard position in "${t}"`);
+    }
+  }
+});
+
+test('the path has 58 steps and visits every chapter', () => {
+  assert.equal(STEPS.length, 58);
+  const chapters = new Set(levels.map((s) => levelOf(s).chapterId));
+  for (const c of ['one', 'pA', 'pB', 'pC', 'neck']) assert.ok(chapters.has(c), c);
+});
+
 test('the path starts at the first level and moves on as steps are done', () => {
   const p = emptyProgress();
   assert.equal(nextStep(p, []).id, 'one-t0');
