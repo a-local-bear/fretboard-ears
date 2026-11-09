@@ -15,6 +15,7 @@ import {
 import { fretboardSVG } from './fretboard.js';
 import { startMic, stopMic, micActive, micSupported } from './mic.js';
 import { matchDegree, SHARP_NAMES } from './pitch.js';
+import { referenceFor } from './reference.js';
 
 const CORRECT_DELAY = 1100;
 const MIC_NOTE_LIMIT = 1.6; // seconds the app's notes may ring while the mic listens
@@ -206,7 +207,9 @@ const SCREENS = {
       <section><h2 class="sub">Dot labels</h2>${seg('labels', [['solfege', 'Solfège'], ['letters', 'Letters'], ['hidden', 'Hidden']])}
         <p class="hint">Hidden shows plain dots, so you answer by position only.</p></section>
       <section><h2 class="sub">Before each note</h2>${seg('ref', [['cadence', 'Cadence'], ['do', 'Do'], ['none', 'Nothing']])}
-        <p class="hint">Cadence strums C–F–G–C. Do plays the root. Nothing is the hardest.</p></section>
+        <p class="hint">Cadence strums C–F–G–C. Do plays the root. Nothing is the hardest.</p>
+        ${seg('refWhen', [['each', 'Every note'], ['level', 'Once per level']])}
+        <p class="hint">Once per level plays it before the first note only. Hear key replays it any time.</p></section>
       <section><h2 class="sub">Sound</h2>${seg('sound', [['guitar', 'Electric guitar'], ['synth', 'Synth']])}
         <p class="hint">Electric guitar uses recorded notes. Synth is the original plucked-string sound.</p></section>
       <section><h2 class="sub">Progress</h2>
@@ -262,7 +265,7 @@ function startRound() {
   render();
   if (!ensureAudio()) return;
   const doMidi = midiOf(chapter().notes[0]);
-  S.noteAt = playReference(S.settings.ref, doMidi);
+  S.noteAt = playReference(referenceFor(S.settings, S.round), doMidi);
   playNote(midiOf(chapter().notes[S.deck[S.round]]), S.noteAt);
 }
 
@@ -293,7 +296,7 @@ function answer(d, fromMic = false) {
     S.states = { ...S.states, [d]: 'correct' };
     appendLog([{
       t: Date.now(), ch: S.chapterId, lvl: S.level, heard, answered: S.answers[S.answers.length - 1].answered,
-      tries: S.tries, ref: S.settings.ref, labels: S.settings.labels,
+      tries: S.tries, ref: referenceFor(S.settings, S.round), labels: S.settings.labels,
     }]);
     timer = setTimeout(advance, CORRECT_DELAY);
   } else {
@@ -449,6 +452,9 @@ const ACTIONS = {
 function onClick(e) {
   const el = e.target.closest('[data-action]');
   if (!el || !app.contains(el) || el.disabled) return;
+  // Mouse/touch clicks have detail > 0; keyboard-activated ones have 0. Drop focus after a pointer
+  // click so Space/Enter act on the screen rather than re-pressing this button.
+  if (e.detail > 0) el.blur();
   ensureAudio();
   requestPersistence();
   ACTIONS[el.dataset.action]?.(el.dataset.arg, el);
