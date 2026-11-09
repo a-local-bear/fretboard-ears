@@ -1,9 +1,11 @@
 // Practice statistics. Pure functions: no DOM, no storage, "now" is always passed in.
-// Log entries: { t, heard, answered, tries, ms? }. Degrees are scale-degree indexes (0 = Do).
+// Log entries: { t, heard, answered, tries, ms?, hs?, as? }. Notes are counted as semitones above the
+// tonic (0 = Do … 11 = Si, 12 = Do'), so they mean the same thing in every key and mode. `hs`/`as` hold
+// that offset; older entries only have `heard`/`answered` as C-major degree indexes (0 = Do … 7 = Do').
 
 export const SESSION_GAP_MS = 5 * 60 * 1000; // a longer pause starts a new session
 export const SESSION_LEAD_MS = 15 * 1000; // time credited for the first answer of a session
-export const STATS_VERSION = 1;
+export const STATS_VERSION = 2;
 
 const pad = (n) => String(n).padStart(2, '0');
 /** Local calendar day of a timestamp as YYYY-MM-DD. */
@@ -19,7 +21,18 @@ const addDays = (t, n) => {
 const dayBefore = (t, n) => dayKey(addDays(t, -n));
 
 const isNum = (x) => typeof x === 'number' && Number.isFinite(x);
-const isDegree = (x) => Number.isInteger(x) && x >= 0 && x < 64;
+const isOffset = (x) => Number.isInteger(x) && x >= 0 && x < 64;
+const MAJOR_OFFSETS = [0, 2, 4, 5, 7, 9, 11, 12];
+/** Fold higher octaves onto Do…Do' so Mi'' counts as Mi and Do'' as Do'. */
+const fold = (o) => (o <= 12 ? o : o % 12 || 12);
+/** The heard and answered notes of an entry as folded offsets, or null if it can't be read. */
+export function notesOf(e) {
+  if (!e || !isNum(e.t)) return null;
+  if (isOffset(e.hs) && isOffset(e.as)) return { h: fold(e.hs), a: fold(e.as) };
+  const h = MAJOR_OFFSETS[e.heard];
+  const a = MAJOR_OFFSETS[e.answered];
+  return h != null && a != null && e.hs == null ? { h, a } : null;
+}
 const bump = (obj, key, by = 1) => { obj[key] = (obj[key] || 0) + by; };
 
 // ---------- aggregate ----------
@@ -28,7 +41,7 @@ export function emptyStats() {
   return {
     v: STATS_VERSION, notes: 0,
     days: {}, // dayKey → answers
-    heard: {}, correct: {}, // degree → count (first-try)
+    heard: {}, correct: {}, // note offset → count (first-try)
     conf: {}, // "heard>answered" → count
     miss: { n: 0, tries: 0 }, // rounds that started with a miss, and total taps they needed
     rt: { n: 0, sum: 0 }, // response time (ms) over entries that have one
@@ -38,13 +51,14 @@ export function emptyStats() {
 
 /** Fold one log entry into an aggregate (mutates and returns it). Entries must arrive in time order. */
 export function addEntry(agg, e) {
-  if (!e || !isNum(e.t) || !isDegree(e.heard) || !isDegree(e.answered)) return agg;
+  const n = notesOf(e);
+  if (!n) return agg;
   agg.notes++;
   bump(agg.days, dayKey(e.t));
-  bump(agg.heard, e.heard);
-  if (e.heard === e.answered) bump(agg.correct, e.heard);
+  bump(agg.heard, n.h);
+  if (n.h === n.a) bump(agg.correct, n.h);
   else {
-    bump(agg.conf, `${e.heard}>${e.answered}`);
+    bump(agg.conf, `${n.h}>${n.a}`);
     if (Number.isInteger(e.tries) && e.tries > 1) { agg.miss.n++; agg.miss.tries += e.tries; }
   }
   if (isNum(e.ms) && e.ms >= 0) { agg.rt.n++; agg.rt.sum += e.ms; }
@@ -154,7 +168,7 @@ export function trend(entries, now, days) {
   const recent = [];
   const earlier = [];
   for (const e of entries || []) {
-    if (!e || !isNum(e.t) || !isDegree(e.heard) || !isDegree(e.answered)) continue;
+    if (!notesOf(e)) continue;
     (dayKey(e.t) >= cutoff ? recent : earlier).push(e);
   }
   const r = accuracyOf(recent);

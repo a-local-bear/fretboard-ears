@@ -1,10 +1,23 @@
-// Pure progress rules. progress = { best: { "<chapterId>-<level>": 0..10 } }
+// Pure progress rules. progress = { best: { "<levelId>": 0..10 } }
+// Level ids come from data.js (levelsFor). The original build-up levels keep "<chapterId>-<0..6>".
 // Every level is open: this is a practice app, so there's no unlocking.
 
-import { CHAPTERS, LEVELS_PER_CHAPTER, PASS_SCORE } from './data.js';
+import { CHAPTERS, ROUNDS, PASS_SCORE, levelsFor } from './data.js';
 
-export const levelKey = (chapterId, level) => `${chapterId}-${level}`;
+/** Storage key of level number `level` (index into levelsFor) of a chapter: the level's id. */
+export const levelKey = (chapterId, level) => levelsFor(chapterId)[level]?.id ?? `${chapterId}-${level}`;
 export const emptyProgress = () => ({ best: {} });
+
+/**
+ * Clean up whatever was stored: keeps every valid score, whatever its key, so scores saved before
+ * levels were added ("one-0" …) and scores for levels this version does not know both survive.
+ */
+export function normalizeProgress(raw) {
+  if (!raw || typeof raw !== 'object') return emptyProgress();
+  const best = {};
+  for (const [k, v] of Object.entries(raw.best || {})) if (Number.isInteger(v) && v >= 0 && v <= ROUNDS) best[k] = v;
+  return { best };
+}
 
 /** A score worth celebrating (plays the arpeggio, shows the level as solid). */
 export const isPassed = (score) => score >= PASS_SCORE;
@@ -21,14 +34,12 @@ export function recordScore(progress, chapterId, level, score) {
 
 /** The level after this one, crossing into the next chapter; null at the very end. */
 export function nextLevel(chapterId, level) {
-  if (level + 1 < LEVELS_PER_CHAPTER) return { chapterId, level: level + 1 };
+  if (level + 1 < levelsFor(chapterId).length) return { chapterId, level: level + 1 };
   const i = CHAPTERS.findIndex((c) => c.id === chapterId);
   return i + 1 < CHAPTERS.length ? { chapterId: CHAPTERS[i + 1].id, level: 0 } : null;
 }
 
 /** How many levels of a chapter have been played at least once. */
 export function playedCount(progress, chapterId) {
-  let n = 0;
-  for (let l = 0; l < LEVELS_PER_CHAPTER; l++) if (bestScore(progress, chapterId, l) != null) n++;
-  return n;
+  return levelsFor(chapterId).filter((l) => progress.best[l.id] != null).length;
 }

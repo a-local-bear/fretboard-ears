@@ -74,10 +74,22 @@ test('per-degree accuracy and confusions', () => {
     e(t, 2, 2), e(t, 2, 2), e(t, 2, 3), e(t, 4, 5), e(t, 4, 5), e(t, 1, 0), e(t, 4, 4),
   ]);
   const acc = degreeAccuracy(agg);
-  assert.deepEqual(acc.map((d) => d.degree), [1, 2, 4]);
-  assert.equal(acc.find((d) => d.degree === 2).acc, 2 / 3);
-  assert.equal(acc.find((d) => d.degree === 1).acc, 0);
-  assert.deepEqual(topConfusions(agg, 2), [{ heard: 4, answered: 5, n: 2 }, { heard: 1, answered: 0, n: 1 }]);
+  // Old entries are C-major degree indexes, counted as semitone offsets: Re = 2, Mi = 4, Sol = 7, La = 9.
+  assert.deepEqual(acc.map((d) => d.degree), [2, 4, 7]);
+  assert.equal(acc.find((d) => d.degree === 4).acc, 2 / 3);
+  assert.equal(acc.find((d) => d.degree === 2).acc, 0);
+  assert.deepEqual(topConfusions(agg, 2), [{ heard: 7, answered: 9, n: 2 }, { heard: 2, answered: 0, n: 1 }]);
+});
+
+test('entries with exact offsets count by note, folding higher octaves', () => {
+  const t = at(2024, 3, 10);
+  const agg = buildStats([
+    e(t, 2, 2, { hs: 3, as: 3 }), // minor Me, not Mi
+    e(t, 8 + 16, 8 + 15, { hs: 16, as: 15 }), // Mi'' heard as Me''
+    e(t, 8 + 24, 8 + 24, { hs: 24, as: 24 }), // Do'' counts as Do'
+  ]);
+  assert.deepEqual(degreeAccuracy(agg).map((d) => d.degree), [3, 4, 12]);
+  assert.deepEqual(topConfusions(agg, 1), [{ heard: 4, answered: 3, n: 1 }]);
 });
 
 test('recovery and response time ignore entries without data', () => {

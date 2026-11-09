@@ -1,9 +1,9 @@
 // localStorage wrappers. Every access is guarded: storage can be missing or throw.
 
-import { emptyProgress } from './progress.js';
+import { normalizeProgress } from './progress.js';
 import { addEntry, buildStats, validStats } from './stats.js';
 
-const KEYS = { settings: 'fe-settings', progress: 'fe-progress', log: 'fe-log', stats: 'fe-stats' };
+const KEYS = { settings: 'fe-settings', progress: 'fe-progress', log: 'fe-log', stats: 'fe-stats', key: 'fe-key' };
 const LOG_MAX = 5000;
 const DEFAULT_SETTINGS = { labels: 'solfege', ref: 'cadence', refWhen: 'each', sound: 'guitar', mic: false };
 
@@ -26,14 +26,15 @@ export function loadSettings() {
 }
 export const saveSettings = (s) => write(KEYS.settings, s);
 
-export function loadProgress() {
-  const p = read(KEYS.progress);
-  if (!p || typeof p !== 'object') return emptyProgress();
-  const best = {};
-  for (const [k, v] of Object.entries(p.best || {})) if (Number.isInteger(v) && v >= 0 && v <= 10) best[k] = v;
-  return { best };
-}
+export const loadProgress = () => normalizeProgress(read(KEYS.progress));
 export const saveProgress = (p) => write(KEYS.progress, p);
+
+/** The tonic (0 = C … 11 = B) the fixed-key levels are played in. */
+export function loadKey() {
+  const k = read(KEYS.key);
+  return Number.isInteger(k) && k >= 0 && k < 12 ? k : 0;
+}
+export const saveKey = (k) => write(KEYS.key, k);
 
 export function loadLog() {
   const log = read(KEYS.log);
