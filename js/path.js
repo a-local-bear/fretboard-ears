@@ -49,16 +49,16 @@ export const STAGES = [
     desc: 'Fa to Do\', then every key and melodies over common progressions.',
     about: 'The rest of the scale brings Fa, which leans down onto Mi, La, which leans down onto Sol, and Si, the leading note that pulls up into Do\'. With all seven notes you can play any melody in a major key and start using the scale to follow the chords of a progression. Once the octave is complete, the key starts to change from round to round, because staying in one key trains absolute pitch instead of function.',
     steps: [
-      L('one-3', 'Fa joins the notes you know. It is the first note above Sol and likes to fall onto Mi. Tip: fixed-key levels follow the key chosen on the Levels screen, so change it now and then.'),
+      L('one-3', 'Fa fills the gap between Mi and Sol. It is the first note that really pulls: it leans down onto Mi, a half step below. Fixed-key levels play in the key chosen on the Levels screen; change it now and then.'),
       L('one-4', 'La is gentle and a little wistful; it likes to fall back to Sol.'),
       G({
         id: 'g-five', title: 'Melodies over I – V',
         intro: [
-          'With Fa and La added, you have every note of the two most important chords in a major key: I (Do, Mi, Sol) and V (Sol, Si, Re). Most simple songs move back and forth between these two chords, and their melodies mostly land on notes that belong to the chord of the moment.',
+          'With Fa and La added, you know six of the seven notes, and with them most of the two most important chords in a major key: all of I (Do, Mi, Sol) and two notes of V (Sol and Re; its third note, Si, comes next). Most simple songs move back and forth between these two chords, and their melodies mostly land on notes that belong to the chord of the moment.',
           'That is the secret of melodies that sound intentional: on the strong beats, at the moment the chord changes, the melody sits on a chord tone, and in between it is free to move by step through other notes. In this guide you practise aiming for chord tones as the harmony changes.',
         ],
         tries: [
-          'Over I, land on Do, Mi or Sol on the first beat. Over V, land on Sol, Si or Re. Play slowly and only on the first beat of each chord at first, then fill in the gaps with steps.',
+          'Over I, land on Do, Mi or Sol on the first beat. Over V, land on Sol or Re. Play slowly and only on the first beat of each chord at first, then fill in the gaps with steps.',
           'Sol is in both chords. Play it all the way through the loop and hear it stay calm while the harmony changes underneath: it is the fifth of I and the root of V. A note that two chords share is how melodies stay smooth across a change.',
           'Call and response: play a short phrase that ends on Re over V (the question), then answer it with a phrase that ends on Do over I. Most folk songs and nursery rhymes are built from exactly this pair of phrases; Ode to Joy is a famous example.',
           'Hum a phrase over the loop first, then find it on the string. Hearing a melody in your head before your fingers play it is the whole point of ear training, so keep this order even when it feels slow.',
@@ -140,7 +140,7 @@ export const STAGES = [
   {
     name: 'Intervals and phrases',
     desc: 'Two notes, then short melodies, then singing them first.',
-    about: 'Melodies are sequences of notes, and the distance between two notes is an interval. Instead of learning intervals as abstract sizes, here you hear them as movements between degrees of the key: Do to Sol, Mi to Fa, Si to Do\'. You learn them in Pattern I, which you already know from the last stage. Then the sequences get longer, and finally you sing the notes before you find them, which is the core skill of playing by ear.',
+    about: 'Melodies are sequences of notes, and the distance between two notes is an interval. Instead of learning intervals as abstract sizes, here you hear them as movements between degrees of the key: Do to Sol, Mi to Fa, Si to Do\'. You learn them in Pattern I, which you already know from the Across the neck stage. Then the sequences get longer, and finally you sing the notes before you find them, which is the core skill of playing by ear.',
     steps: [
       L('pA-pairs-oct', 'Pairs from the whole octave in Pattern I. Name both: the first against the cadence, the second against the first. Wide leaps are easier if you hear the target note\'s character rather than measuring the distance.'),
       L('pA-pairs-rk', 'Pairs in random keys. The key changes, the movement between degrees does not.'),
