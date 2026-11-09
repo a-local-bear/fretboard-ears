@@ -48,7 +48,7 @@ test('chapter pitch ranges match the spec', () => {
 });
 
 test('every chapter is a C major scale (W W H W W W H)', () => {
-  for (const c of CHAPTERS) {
+  for (const c of CHAPTERS.filter((c) => c.notes.length)) {
     const m = c.notes.map(midiOf);
     const steps = m.slice(1).map((v, i) => v - m[i]);
     assert.deepEqual(steps, [2, 2, 1, 2, 2, 2, 1], c.id);
