@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mulberry32 } from '../js/deck.js';
 import {
-  makePhrase, buildPhraseDeck, buildSequenceDeck, isStable,
+  allPairs, buildPairDeck, makePhrase, buildPhraseDeck, buildSequenceDeck, isStable,
 } from '../js/phrase.js';
 import { CHAPTERS, levelsFor, buildContext, ROUNDS } from '../js/data.js';
 
@@ -50,6 +50,7 @@ test('minor phrases end on the minor stable degrees', () => {
 
 test('phrases are deterministic for a seed', () => {
   assert.deepEqual(buildPhraseDeck(MAJOR, 4, 10, { rng: mulberry32(9) }), buildPhraseDeck(MAJOR, 4, 10, { rng: mulberry32(9) }));
+  assert.deepEqual(buildPairDeck(MAJOR, 10, mulberry32(9)), buildPairDeck(MAJOR, 10, mulberry32(9)));
 });
 
 test('a phrase deck has no immediate duplicates', () => {
@@ -58,10 +59,26 @@ test('a phrase deck has no immediate duplicates', () => {
   deck.forEach((p, i) => { if (i) assert.notEqual(p.join(), deck[i - 1].join()); });
 });
 
+test('degree pairs cover every pair of the pool evenly', () => {
+  const pool = [0, 2, 4, 5];
+  assert.equal(allPairs(pool).length, 12);
+  const deck = buildPairDeck(pool, 36, mulberry32(5));
+  const counts = new Map();
+  for (const [a, b] of deck) {
+    assert.notEqual(a, b);
+    counts.set(`${a},${b}`, (counts.get(`${a},${b}`) || 0) + 1);
+  }
+  assert.equal(counts.size, 12);
+  assert.ok([...counts.values()].every((c) => c === 3));
+  deck.forEach((p, i) => { if (i) assert.notEqual(p.join(), deck[i - 1].join()); });
+  const short = buildPairDeck(MAJOR, ROUNDS, mulberry32(5));
+  assert.equal(new Set(short.map((p) => p.join())).size, ROUNDS, 'no repeats before the bag is empty');
+});
+
 test('every sequence level builds valid decks in every key', () => {
   for (const c of CHAPTERS) {
     for (const level of levelsFor(c.id).filter((l) => l.len > 1)) {
-      assert.ok(level.family === 'dictation');
+      assert.ok(['pairs', 'dictation'].includes(level.family));
       for (let keyPc = 0; keyPc < 12; keyPc++) {
         const mode = level.mode ?? 'major';
         const pool = buildContext(c.id, level, keyPc, mode).pool;
@@ -82,4 +99,5 @@ test('sequence levels join the level model after the existing ones', () => {
   const ls = levelsFor('pA');
   assert.deepEqual(ls.slice(0, 19).filter((l) => l.len), []);
   assert.deepEqual(ls.filter((l) => l.family === 'dictation').map((l) => l.len), [2, 3, 4, 5, 4, 4]);
+  assert.deepEqual(ls.filter((l) => l.family === 'pairs').map((l) => l.id), ['pA-pairs-1st', 'pA-pairs-oct', 'pA-pairs-minor', 'pA-pairs-rk']);
 });

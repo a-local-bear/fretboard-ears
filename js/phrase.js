@@ -18,6 +18,36 @@ function shuffle(arr, rng) {
   return arr;
 }
 
+/** Every ordered pair of two different notes of the pool. */
+export function allPairs(pool) {
+  const out = [];
+  for (const a of pool) for (const b of pool) if (a !== b) out.push([a, b]);
+  return out;
+}
+
+/**
+ * `rounds` degree pairs covering the pool's pairs evenly: pairs are dealt from a shuffled bag of all
+ * of them, and the bag is refilled only when empty, so no pair repeats before all have been used (and
+ * none twice in a row across a refill).
+ */
+export function buildPairDeck(pool, rounds = 10, rng = Math.random) {
+  const all = allPairs(pool);
+  if (!all.length) return Array.from({ length: rounds }, () => [pool[0], pool[0]]);
+  const same = (p, q) => p && q && p[0] === q[0] && p[1] === q[1];
+  const deck = [];
+  let bag = [];
+  while (deck.length < rounds) {
+    if (!bag.length) {
+      bag = shuffle(all.slice(), rng);
+      if (bag.length > 1 && same(bag[bag.length - 1], deck[deck.length - 1])) {
+        [bag[0], bag[bag.length - 1]] = [bag[bag.length - 1], bag[0]];
+      }
+    }
+    deck.push(bag.pop());
+  }
+  return deck;
+}
+
 /**
  * One melodic phrase of `len` notes from an ascending pool: starts on or near Do (the low part of
  * the pool, favouring Do, Mi, Sol), moves mostly by step with some skips and the occasional leap
@@ -72,7 +102,9 @@ export function buildPhraseDeck(pool, len, rounds = 10, { mode = 'major', rng = 
   return deck;
 }
 
-/** The deck for a sequence level: musical phrases of `level.len` notes. */
+/** The deck for a level: 'pairs' deal pairs evenly, otherwise musical phrases of `level.len` notes. */
 export function buildSequenceDeck(level, pool, rounds, mode, rng = Math.random) {
-  return buildPhraseDeck(pool, level.len, rounds, { mode, rng });
+  return level.family === 'pairs'
+    ? buildPairDeck(pool, rounds, rng)
+    : buildPhraseDeck(pool, level.len, rounds, { mode, rng });
 }
