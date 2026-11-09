@@ -254,3 +254,31 @@ button { font: inherit; color: inherit; }
 .muted { color: var(--muted); }
 .figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
 .fig b { font: 700 32px/1.1 var(--display); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+
+/* ---------- backing track ---------- */
+.backing .keybar { gap: 12px; }
+.btsec { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.btsec .sub { margin: 0; align-self: flex-start; }
+.snum { font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: 0.04em; color: var(--muted); }
+.slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 8px; width: 100%; max-width: 420px; }
+.slot { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 64px; justify-content: center; border-radius: 12px; border: 1px solid var(--line-2); background: transparent; font-size: 20px; cursor: pointer; }
+.slot:hover { border-color: var(--ink); }
+.slot.sel { border-color: var(--accent); }
+.slot.now { border-color: var(--ink); border-width: 2px; }
+.slot.now .snum { color: var(--accent); }
+.slotctl, .presets { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.chordpal { display: grid; grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)); gap: 6px; width: 100%; max-width: 420px; }
+.chordpick { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 52px; justify-content: center; border-radius: 12px; border: 1px solid var(--line-2); background: transparent; cursor: pointer; }
+.chordpick:hover { border-color: var(--ink); }
+.chordpick.on { border-color: var(--accent); }
+.preset { min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-2); background: transparent; font-weight: 700; color: var(--muted); cursor: pointer; }
+.preset:hover { border-color: var(--ink); color: var(--ink); }
+.tempo { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; max-width: 420px; }
+.tempo input { width: 100%; accent-color: var(--accent); min-height: 32px; }
+.btnow { margin: 0; text-align: center; min-height: 1.3em; font: 700 28px/1.3 var(--display); letter-spacing: -0.02em; color: var(--muted); }
+.btnow .snum { font-size: 16px; }
+/* Chord tones: thicker coloured stroke and a faint ring; the rest of the scale steps back. */
+.dot.chord .disc { stroke-width: 3.5; }
+.dot.chord .ring { stroke: var(--c); stroke-width: 1; opacity: 0.45; }
+.dot.dim { opacity: 0.38; }
+.dot.dim:hover { opacity: 0.8; }

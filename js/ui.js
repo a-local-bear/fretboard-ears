@@ -1,7 +1,7 @@
 // App state, screens and input handling. Full re-render via innerHTML, skipped when nothing changed.
 
 import {
-  CHAPTERS, ROUNDS, FAMILIES, noteColor, solfegeName, letterName, keyName, keyLetter, degreeIndex,
+  OPEN, SCALES, MIN_MIDI, MAX_MIDI, CHAPTERS, ROUNDS, FAMILIES, noteColor, solfegeName, letterName, keyName, keyLetter, degreeIndex,
   chapterById, levelsFor, buildContext, pickKey, placeChapter, positionsOf, resolutionOf,
 } from './data.js';
 import { buildDeck } from './deck.js';
@@ -11,19 +11,23 @@ import {
 } from './progress.js';
 import {
   loadSettings, saveSettings, loadProgress, saveProgress, loadKey, saveKey, appendLog, requestPersistence,
-  loadStats, loadLog,
+  loadStats, loadLog, loadBacking, saveBacking,
 } from './storage.js';
 import {
   streaks, heatmap, totals, degreeAccuracy, topConfusions, triesAfterMiss, avgResponseMs, trend,
 } from './stats.js';
 import { progressHTML } from './charts.js';
 import {
-  ensureAudio, prerender, playNote, playReference, playArpeggio, stopAll, now, setSound, setNoteLimit, quietAt,
+  ensureAudio, prerender, playNote, playReference, playOver, playArpeggio, startLoop, stopLoop, loopActive, stopAll, droneActive, now, setSound, setNoteLimit, quietAt,
 } from './audio.js';
 import { fretboardSVG } from './fretboard.js';
 import { startMic, stopMic, micActive, micSupported } from './mic.js';
 import { matchDegree, SHARP_NAMES } from './pitch.js';
 import { referenceFor } from './reference.js';
+import {
+  chordsFor, chordByNumeral, chordName, chordPcs, voicing, pickOverChord, convertSlots, PRESETS, presetLabel,
+  MIN_SLOTS, MAX_SLOTS, TEMPO_RANGE, BARS_OPTIONS,
+} from './harmony.js';
 
 const CORRECT_DELAY = 1100;
 const PHRASE_STEP = 0.6; // seconds between the notes of a phrase
@@ -32,7 +36,7 @@ const MIC_NOTE_LIMIT = 1.6; // seconds the app's notes may ring while the mic li
 const VERTICAL_BELOW = 640;
 
 const S = {
-  screen: 'home', // home | levels | explore | play | results | settings | stats
+  screen: 'home', // home | levels | explore | play | results | settings | stats | backing
   chapterId: 'one',
   level: 0, // index into levelsFor(chapterId)
   keyPc: loadKey(), // tonic of the fixed-key levels (0 = C … 11 = B)
@@ -48,11 +52,13 @@ const S = {
   posStates: {}, // 'string,fret' → dot state, for lighting one position of a note (the resolution)
   resolution: [], // note ids of the resolution being played, shown in the feedback line
   noteAt: 0, // context time of the current mystery note
+  overChord: null, // the chord (harmony.js) the current mystery note sounds over, or null
   noteMs: null, // ms from the mystery note sounding to the first tap (null if unknown)
   stats: null, // snapshot for the stats screen, taken when it opens
   result: null, // { score, newBest, passed }
   confirmReset: false,
   mic: 'off', // off | starting | on | blocked (runtime state; the wish to use it is settings.mic)
+  bt: { ...loadBacking(), playing: false, cur: null, sel: 0, flash: null }, // backing track: saved fields + runtime state
   settings: loadSettings(),
   progress: loadProgress(),
   vertical: window.innerWidth < VERTICAL_BELOW,
@@ -126,7 +132,10 @@ function micBar() {
     ${on && S.mic === 'blocked' ? '<p class="micnote">The microphone is blocked. Allow it for this site in your browser settings, then turn the mic off and on again.</p>' : ''}`;
 }
 
-const refLabel = () => (S.settings.ref === 'do' ? 'Hear Do' : 'Hear key');
+const refLabel = () => {
+  const r = referenceFor(S.settings, 0);
+  return r === 'do' ? 'Hear Do' : r === 'drone' ? 'Hear drone' : 'Hear key';
+};
 
 const SCREENS = {
   home() {
@@ -143,7 +152,7 @@ const SCREENS = {
           </button></li>`;
         }).join('')}
       </ol>
-      <div class="actions">${btn('stats', 'Practice stats', 'ghost')}</div>
+      <div class="actions">${btn('backing', 'Backing track', 'ghost')}${btn('stats', 'Practice stats', 'ghost')}</div>
     </main>`;
   },
 
@@ -331,6 +340,41 @@ const SCREENS = {
     </main>`;
   },
 
+  backing() {
+    const b = S.bt;
+    const chords = btChords();
+    const keys = Array.from({ length: 12 }, (_, pc) => `<button class="keychip ${pc === b.key ? 'on' : ''}" data-action="btkey" data-arg="${pc}" data-focus-key="btkey-${pc}" aria-pressed="${pc === b.key}">${esc(keyLetter(pc, b.mode))}</button>`).join('');
+    const opts = (action, list, cur) => `<div class="seg" role="radiogroup">${list.map(([v, label]) =>
+      `<button role="radio" aria-checked="${cur === v}" class="${cur === v ? 'on' : ''}" data-action="${action}" data-arg="${v}" data-focus-key="${action}-${v}">${label}</button>`).join('')}</div>`;
+    const sel = chords[b.sel];
+    return `${topbar('Backing track', 'home')}
+    <main class="screen backing">
+      <div class="keybar"><span class="keylabel" id="keylabel">Key</span><div class="keychips" role="group" aria-labelledby="keylabel">${keys}</div>
+        ${opts('btmode', [['major', 'Major'], ['minor', 'Minor']], b.mode)}</div>
+      <section class="btsec"><h2 class="sub">Progression</h2>
+        <div class="slots" id="bt-slots">${chords.map((c, i) => `<button class="slot ${i === b.sel ? 'sel' : ''} ${b.playing && b.cur === i ? 'now' : ''}" data-action="btslot" data-arg="${i}" data-focus-key="btslot-${i}" aria-pressed="${i === b.sel}">
+            <span class="snum">${esc(c.numeral)}</span>${coloredName(c.root, chordName(c, b.key, b.mode))}</button>`).join('')}</div>
+        <div class="slotctl">
+          ${btn('btadd', '+ Chord', 'ghost small')}${btn('btdel', '− Remove', 'ghost small')}
+        </div>
+        <span class="keylabel">Chord for slot ${b.sel + 1}</span>
+        <div class="chordpal" role="group" aria-label="Chord for slot ${b.sel + 1}">${chordsFor(b.mode).map((c) =>
+          `<button class="chordpick ${c.numeral === sel.numeral ? 'on' : ''}" data-action="btchord" data-arg="${esc(c.numeral)}" data-focus-key="btchord-${esc(c.numeral)}" aria-pressed="${c.numeral === sel.numeral}"><span class="snum">${esc(c.numeral)}</span>${coloredName(c.root, chordName(c, b.key, b.mode))}</button>`).join('')}</div>
+        <span class="keylabel">Presets</span>
+        <div class="presets">${PRESETS[b.mode].map((p, i) => `<button class="preset" data-action="btpreset" data-arg="${i}" data-focus-key="btpreset-${i}">${esc(presetLabel(p))}</button>`).join('')}</div>
+      </section>
+      <section class="btsec"><h2 class="sub">Tempo</h2>
+        <label class="tempo"><span class="keylabel"><span id="tempoval">${b.tempo}</span> bpm</span>
+          <input type="range" min="${TEMPO_RANGE[0]}" max="${TEMPO_RANGE[1]}" step="1" value="${b.tempo}" data-range="tempo" aria-label="Tempo in beats per minute"></label>
+        <span class="keylabel">Bars per chord</span>
+        ${opts('btbars', BARS_OPTIONS.map((n) => [String(n), String(n)]), String(b.bars))}
+      </section>
+      <p class="btnow" id="bt-now">${btNowHTML()}</p>
+      <div class="boardwrap" id="bt-board">${btBoard()}</div>
+      <div class="actions">${btn('btplay', b.playing ? 'Stop' : 'Play', 'primary')}</div>
+    </main>`;
+  },
+
   settings() {
     const seg = (key, opts) => `<div class="seg" role="radiogroup">${opts.map(([v, label]) =>
       `<button role="radio" aria-checked="${S.settings[key] === v}" class="${S.settings[key] === v ? 'on' : ''}" data-action="set" data-arg="${key}:${v}" data-focus-key="set-${key}-${v}">${label}</button>`).join('')}</div>`;
@@ -338,10 +382,12 @@ const SCREENS = {
     <main class="screen settings">
       <section><h2 class="sub">Dot labels</h2>${seg('labels', [['solfege', 'Solfège'], ['letters', 'Letters'], ['hidden', 'Hidden']])}
         <p class="hint">Hidden shows plain dots, so you answer by position only.</p></section>
-      <section><h2 class="sub">Reference</h2>${seg('ref', [['cadence', 'Cadence'], ['do', 'Do'], ['none', 'Nothing']])}
-        <p class="hint">Cadence strums C–F–G–C. Do plays the root. Nothing is the hardest.</p>
+      <section><h2 class="sub">Reference</h2>${seg('ref', [['cadence', 'Cadence'], ['do', 'Do'], ['drone', 'Drone'], ['none', 'Nothing']])}
+        <p class="hint">Cadence strums C–F–G–C. Do plays the root. Drone holds the root and fifth under the note until you answer (it plays Do instead while the mic is on, since the mic would hear it). Nothing is the hardest.</p>
         ${seg('refWhen', [['each', 'Every note'], ['level', 'Once per level']])}
         <p class="hint">Once per level plays it before the first note only. Hear key replays it any time.</p></section>
+      <section><h2 class="sub">Note over a chord</h2>${seg('over', [['off', 'Off'], ['main', 'I IV V'], ['any', 'Any chord']])}
+        <p class="hint">The cadence plays first as usual, then the note sounds over a random chord, so you hear how the same note changes colour with the harmony. The cadence replaces a drone or Do reference. Each answer is logged with its chord.</p></section>
       <section><h2 class="sub">Resolve to Do</h2>${seg('resolve', [['on', 'On'], ['off', 'Off']])}
         <p class="hint">After a correct answer, hear the note walk stepwise to the nearest Do.</p></section>
       <section><h2 class="sub">Sound</h2>${seg('sound', [['guitar', 'Electric guitar'], ['synth', 'Synth']])}
@@ -376,6 +422,7 @@ function promptText() {
 
 function go(screen) {
   clearTimer();
+  btStop();
   stopAll();
   if (screen !== 'settings') S.confirmReset = false;
   S.screen = screen;
@@ -388,13 +435,15 @@ function go(screen) {
 
 const levelMidis = () => (S.ctx ? degrees().map(midiOfNote) : []);
 const cadenceMidis = () => (S.ctx ? S.ctx.cadence.chords.flat() : []);
+/** Every chord voicing of the level's key, when the mystery note may sound over a chord. */
+const overMidis = () => (S.ctx && S.settings.over !== 'off' ? chordsFor(S.ctx.mode).flatMap((c) => voicing(c, S.ctx.keyPc)) : []);
 
 function openLevel(index) {
   S.level = index;
   const { keyPc, mode } = pickKey(level(), S.keyPc);
   S.ctx = buildContext(S.chapterId, level(), keyPc, mode);
   go('explore');
-  if (ensureAudio()) prerender([...levelMidis(), ...cadenceMidis()]);
+  if (ensureAudio()) prerender([...levelMidis(), ...cadenceMidis(), ...overMidis()]);
 }
 
 function startLevel() {
@@ -418,21 +467,28 @@ function startRound() {
   S.noteAt = 0;
   render();
   if (!ensureAudio()) return;
+  // With "note over a chord" on, a chord is struck after the reference and the phrase sounds over it.
+  S.overChord = pickOverChord(S.settings.over, S.ctx.mode);
+  const over = S.overChord && voicing(S.overChord, S.ctx.keyPc);
   // Response time counts from the last note of the phrase sounding.
-  S.noteAt = playPhrase(playReference(referenceFor(S.settings, S.round), S.ctx.tonic, S.ctx.cadence.chords));
+  S.noteAt = playPhrase(playReference(referenceFor(S.settings, S.round), S.ctx.tonic, S.ctx.cadence.chords, { over }));
 }
 
 /** Play the round's whole phrase from time `at`; returns when its last note sounds. */
-function playPhrase(at) {
+function playPhrase(at, from = 0) {
   const seq = targets();
-  seq.forEach((d, i) => playNote(midiOfNote(d), at + i * PHRASE_STEP));
-  return at + (seq.length - 1) * PHRASE_STEP;
+  seq.slice(from).forEach((d, i) => playNote(midiOfNote(d), at + i * PHRASE_STEP));
+  return at + (seq.length - 1 - from) * PHRASE_STEP;
 }
 
 function replay() {
   if (!ensureAudio()) return;
-  stopAll();
-  playPhrase(now() + 0.03);
+  stopAll(undefined, true); // a drone keeps holding under the replayed phrase
+  if (S.overChord) {
+    // Strike the chord again with the first note over it, then the rest of the phrase.
+    const at = playOver(voicing(S.overChord, S.ctx.keyPc), midiOfNote(targets()[0]));
+    playPhrase(at + PHRASE_STEP, 1);
+  } else playPhrase(now() + 0.03);
 }
 
 /**
@@ -454,7 +510,8 @@ function answer(d, fromMic = false, pos = null) {
   }
   S.tries++;
   S.resolution = [];
-  stopAll();
+  // The drone holds through wrong taps and the phrase; finding its last note (feedback) ends it.
+  stopAll(undefined, !(ok && p === seq.length - 1));
   if (!fromMic) playNote(midiOfNote(d), now() + 0.03);
   if (ok) {
     const first = S.answers[S.round].notes[p].answered;
@@ -468,6 +525,7 @@ function answer(d, fromMic = false, pos = null) {
       lid: level().id, key: S.ctx.keyPc, mode: S.ctx.mode, hs: heard, as: first,
       // Added with sequence levels: the note's index in the phrase and the phrase length (0 and 1 for single notes).
       seq: p, len: seq.length,
+      chord: S.overChord ? S.overChord.numeral : null, // roman numeral the note sounded over (null: none)
     }]);
     if (p < seq.length - 1) {
       // Next note of the phrase; its dots start clean and its response time from now.
@@ -542,8 +600,10 @@ function advance() {
 
 function playReferenceOnly() {
   if (!ensureAudio()) return;
+  if (S.screen === 'play' && droneActive()) return; // already sounding under the round
   stopAll();
-  playReference(S.settings.ref === 'do' ? 'do' : 'cadence', S.ctx.tonic, S.ctx.cadence.chords);
+  const mode = referenceFor({ ...S.settings, refWhen: 'each' }, 0);
+  playReference(mode === 'none' ? 'cadence' : mode, S.ctx.tonic, S.ctx.cadence.chords, { droneFor: 3 });
 }
 
 function tapDot(d, pos = null) {
@@ -557,7 +617,142 @@ function tapDot(d, pos = null) {
     timer = setTimeout(() => { S.states = {}; render(); }, 600);
   } else if (S.screen === 'play') {
     answer(d, false, pos);
+  } else if (S.screen === 'backing' && pos) {
+    btTap(pos);
   }
+}
+
+// ---------- backing track ----------
+
+const btChords = () => S.bt.slots.map((n) => chordByNumeral(S.bt.mode, n));
+const btSettled = () => ({ key: S.bt.key, mode: S.bt.mode, slots: S.bt.slots, tempo: S.bt.tempo, bars: S.bt.bars });
+const btTimers = new Set();
+const ALL_SAMPLE_MIDIS = Array.from({ length: MAX_MIDI - MIN_MIDI + 1 }, (_, i) => MIN_MIDI + i);
+
+/** The chord whose tones the fretboard emphasises: the one playing, else the slot being edited. */
+const btShown = () => btChords()[S.bt.playing && S.bt.cur != null ? S.bt.cur : S.bt.sel] || btChords()[0];
+
+function btNowHTML() {
+  const { playing, cur, key, mode } = S.bt;
+  const c = playing && cur != null ? btChords()[cur] : null;
+  if (!c) return playing ? 'Starting…' : 'Press Play, or tap a dot to hear the note.';
+  return `<span class="snum">${esc(c.numeral)}</span> ${coloredName(c.root, chordName(c, key, mode))}`;
+}
+
+/** The scale across the first twelve frets, the current chord's tones emphasised and the rest dimmed. */
+function btBoard() {
+  const { key, mode, flash } = S.bt;
+  const shown = btShown();
+  const tones = new Set(chordPcs(shown));
+  const dots = [];
+  for (let st = 0; st < 6; st++) {
+    for (let f = 0; f <= 12; f++) {
+      const pc = (((OPEN[st] + f - key) % 12) + 12) % 12;
+      if (SCALES[mode].includes(pc) || tones.has(pc)) dots.push({ id: pc, pos: [st, f] });
+    }
+  }
+  const states = {};
+  for (const { id } of dots) states[id] = tones.has(id) ? 'chord' : 'dim';
+  const label = (id) => (S.settings.labels === 'letters' ? letterName(id, key, mode) : solfegeName(id));
+  return fretboardSVG({
+    dots, frame: { lo: 0, hi: 12 }, labelOf: label, nameOf: solfegeName, vertical: S.vertical,
+    states, posStates: flash ? { [flash]: 'playing' } : {},
+  });
+}
+
+/** Update the live parts of the screen in place (no full render, so a slider drag or focus survives). */
+function btPaint() {
+  if (S.screen !== 'backing') return;
+  document.querySelectorAll('#bt-slots .slot').forEach((el, i) => el.classList.toggle('now', S.bt.playing && S.bt.cur === i));
+  const nowEl = document.getElementById('bt-now');
+  if (nowEl) nowEl.innerHTML = btNowHTML();
+  const board = document.getElementById('bt-board');
+  if (board) board.innerHTML = btBoard();
+  lastHTML = SCREENS.backing();
+}
+
+function btStop() {
+  if (!S.bt.playing && !loopActive()) return;
+  stopLoop();
+  btTimers.forEach(clearTimeout);
+  btTimers.clear();
+  S.bt.playing = false;
+  S.bt.cur = null;
+}
+
+function btStart() {
+  if (!ensureAudio()) return;
+  prerender(ALL_SAMPLE_MIDIS);
+  const { key, tempo, bars } = S.bt;
+  S.bt.playing = true;
+  S.bt.cur = null;
+  startLoop({
+    chords: btChords().map((c) => voicing(c, key)), bpm: tempo, bars,
+    onChord: (index, time) => {
+      const id = setTimeout(() => {
+        btTimers.delete(id);
+        if (!S.bt.playing) return;
+        S.bt.cur = index;
+        btPaint();
+      }, Math.max(0, (time - now()) * 1000));
+      btTimers.add(id);
+    },
+  });
+}
+
+/** After any edit: save it, and restart the loop from the top if it was running. */
+function btChanged() {
+  saveBacking(btSettled());
+  S.bt.sel = Math.min(S.bt.sel, S.bt.slots.length - 1);
+  if (S.bt.playing) { btStop(); btStart(); }
+  render();
+}
+
+function btTap(pos) {
+  if (!ensureAudio()) return;
+  const [st, f] = pos.split(',').map(Number);
+  playNote(OPEN[st] + f, now() + 0.01, 0.9); // over the track: nothing is stopped
+  S.bt.flash = pos;
+  btPaint();
+  const id = setTimeout(() => { btTimers.delete(id); if (S.bt.flash === pos) { S.bt.flash = null; btPaint(); } }, 450);
+  btTimers.add(id);
+}
+
+const BT_ACTIONS = {
+  backing: () => { go('backing'); if (ensureAudio()) prerender(ALL_SAMPLE_MIDIS); },
+  btkey: (arg) => { S.bt.key = Number(arg); btChanged(); },
+  btmode: (arg) => {
+    if (arg === S.bt.mode) return;
+    S.bt.slots = convertSlots(S.bt.slots, S.bt.mode, arg);
+    S.bt.mode = arg;
+    btChanged();
+  },
+  btslot: (arg) => { S.bt.sel = Number(arg); render(); btPaint(); },
+  btchord: (arg) => { S.bt.slots = S.bt.slots.map((n, i) => (i === S.bt.sel ? arg : n)); btChanged(); },
+  btadd: () => {
+    if (S.bt.slots.length >= MAX_SLOTS) return;
+    S.bt.slots = [...S.bt.slots, S.bt.slots[S.bt.sel]];
+    S.bt.sel = S.bt.slots.length - 1;
+    btChanged();
+  },
+  btdel: () => {
+    if (S.bt.slots.length <= MIN_SLOTS) return;
+    S.bt.slots = S.bt.slots.filter((_, i) => i !== S.bt.sel);
+    btChanged();
+  },
+  btpreset: (arg) => { S.bt.slots = [...PRESETS[S.bt.mode][Number(arg)]]; S.bt.sel = 0; btChanged(); },
+  btbars: (arg) => { S.bt.bars = Number(arg); btChanged(); },
+  btplay: () => { if (S.bt.playing) btStop(); else btStart(); render(); },
+};
+
+/** Tempo slider: `input` moves the number live, `change` (on release) applies and saves it. */
+function onRange(e) {
+  const el = e.target.closest?.('[data-range="tempo"]');
+  if (!el) return;
+  S.bt.tempo = Math.max(TEMPO_RANGE[0], Math.min(TEMPO_RANGE[1], Math.round(Number(el.value)) || S.bt.tempo));
+  const val = document.getElementById('tempoval');
+  if (val) val.textContent = S.bt.tempo;
+  if (e.type === 'change') btChanged();
 }
 
 // ---------- microphone ----------
@@ -620,6 +815,7 @@ function onMicNote(midi) {
 // ---------- input ----------
 
 const ACTIONS = {
+  ...BT_ACTIONS,
   home: () => go('home'),
   settings: () => go('settings'),
   stats: () => { S.stats = { agg: loadStats(), log: loadLog(), now: Date.now() }; go('stats'); },
@@ -648,7 +844,7 @@ const ACTIONS = {
     saveSettings(S.settings);
     if (key === 'sound') {
       setSound(value);
-      if (ensureAudio()) prerender([...levelMidis(), ...cadenceMidis()]);
+      if (ensureAudio()) prerender([...levelMidis(), ...cadenceMidis(), ...overMidis()]);
     }
     render();
   },
@@ -691,6 +887,7 @@ function onKey(e) {
     ensureAudio();
     if (S.screen === 'explore') startLevel();
     else if (S.screen === 'play') (S.phase === 'feedback' ? advance() : replay());
+    else if (S.screen === 'backing') ACTIONS.btplay();
     else if (S.screen === 'results') {
       const nxt = nextLevel(S.chapterId, S.level);
       if (nxt) ACTIONS.next();
@@ -715,6 +912,11 @@ export function mount(root) {
   });
   document.addEventListener('keydown', onKey);
   window.addEventListener('resize', onResize);
-  document.addEventListener('visibilitychange', () => render());
+  app.addEventListener('input', onRange);
+  app.addEventListener('change', onRange);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') btStop(); // timers throttle in the background; don't let the loop stutter
+    render();
+  });
   render();
 }
