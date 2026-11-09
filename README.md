@@ -19,6 +19,17 @@ ssh -L 8080:localhost:8080 localbear@<server>
 
 Then open http://localhost:8080 in Chrome or Edge and use the install icon in the address bar.
 
+### On a phone (home network)
+
+```sh
+./serve.sh --lan    # prints the address to open, e.g. http://192.168.1.64:8080/
+```
+
+Over plain HTTP the app works as a normal web page, and progress is saved on the phone.
+Chrome blocks the service worker on non-HTTPS addresses, so you can't install it or use it offline.
+To get both without HTTPS on Android, open `chrome://flags/#unsafely-treat-insecure-origin-as-secure`,
+add `http://192.168.1.64:8080`, enable it and relaunch Chrome. After that, use "Add to Home screen" or "Install app".
+
 ## Test
 
 ```sh

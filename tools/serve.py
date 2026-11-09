@@ -28,7 +28,7 @@ def main():
     port = int(sys.argv[2]) if len(sys.argv) > 2 else 8080
     handler = functools.partial(Handler, directory=str(ROOT))
     with http.server.ThreadingHTTPServer((host, port), handler) as httpd:
-        print(f'Serving Fretboard Ears on http://{"localhost" if host == "127.0.0.1" else host}:{port}/')
+        print(f"Serving Fretboard Ears on http://localhost:{port}/" + ("" if host == "127.0.0.1" else " and on the network"), flush=True)
         httpd.serve_forever()
 
 
