@@ -55,7 +55,7 @@ button { font: inherit; color: inherit; }
 
 /* ---------- shared text helpers ---------- */
 /* Small uppercase monospace readout: metadata, captions, counters. */
-.label, .sub, .tsub, .count, .hearing, .cmeta, .lnum, .lbest, .newbest, .verdict, .stat-label {
+.label, .sub, .tsub, .count, .hearing, .cmeta, .lnum, .lbest, .newbest, .verdict, .keylabel, .keyline, .hero span, .fig span, .fig small, .hero small, .bn {
   font-family: var(--mono);
   font-size: 11.5px;
   font-weight: 500;
@@ -65,7 +65,7 @@ button { font: inherit; color: inherit; }
 /* A scale degree name. Colour comes from --c, set by degreeName() in ui.js. */
 .deg { color: var(--c, var(--ink)); font-weight: 700; }
 .hl { color: var(--accent); }
-.bignum, .stat-value { font: 700 56px/1 var(--display); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.bignum { font: 700 56px/1 var(--display); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
 
 /* ---------- top bar ---------- */
 .topbar { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; padding: 14px 0 6px; }
@@ -118,19 +118,18 @@ button { font: inherit; color: inherit; }
 .levelcard.passed .lbest { color: var(--ok); }
 .lnotes { flex-wrap: wrap; gap: 3px; }
 .lnotes i { width: 9px; height: 9px; }
-.lnum { font-size: 16px; }
 .levelgrid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 .family { display: flex; flex-direction: column; gap: 10px; }
 .family .sub { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
-.fmode { text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--accent); }
+.fmode { color: var(--accent); }
 .keybar { display: flex; flex-direction: column; gap: 8px; align-items: center; }
-.keylabel { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.keylabel { color: var(--muted); }
 .keychips { display: grid; grid-template-columns: repeat(6, minmax(44px, 1fr)); gap: 6px; width: 100%; max-width: 420px; }
-.keychip { min-height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); font-weight: 700; cursor: pointer; }
-.keychip:hover { border-color: var(--muted); }
-.keychip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.keychip { min-height: 44px; border-radius: 12px; border: 1px solid var(--line-2); background: transparent; font-weight: 700; cursor: pointer; }
+.keychip:hover { border-color: var(--ink); }
+.keychip.on { border-color: var(--accent); color: var(--accent); }
 .keynote { margin: 0; color: var(--muted); font-size: 13px; text-align: center; text-wrap: balance; }
-.keyline { margin: 0; text-align: center; font: 600 18px/1.2 var(--display); color: var(--accent); }
+.keyline { margin: 0; text-align: center; color: var(--accent); }
 
 /* ---------- fretboard: line drawing ---------- */
 .boardwrap { display: flex; justify-content: center; }
@@ -186,15 +185,6 @@ button { font: inherit; color: inherit; }
 .confusions li { padding: 14px 4px; border-bottom: 1px solid var(--line); color: var(--muted); }
 .confusions li b { font-weight: 700; }
 
-/* ---------- stats (shared classes) ---------- */
-.stat-label { color: var(--muted); }
-.stat-value { color: var(--ink); }
-.bar { height: 2px; background: var(--line); border-radius: 1px; overflow: hidden; }
-.bar > i { display: block; height: 100%; background: var(--c, var(--ink)); }
-/* Heatmap squares: the one filled colour, shades of the accent on black. --v is 0..1. */
-.heat { display: grid; gap: 3px; }
-.heatcell { aspect-ratio: 1; border-radius: 3px; background: color-mix(in srgb, var(--accent) calc(var(--v, 0) * 100%), var(--surface-2)); }
-
 /* ---------- settings ---------- */
 .settings section { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
 .seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 999px; padding: 3px; background: transparent; flex-wrap: wrap; }
@@ -231,29 +221,30 @@ button { font: inherit; color: inherit; }
 
 /* ---------- stats ---------- */
 .emptystate { text-align: center; display: flex; flex-direction: column; gap: 14px; align-items: center; padding: 40px 0; }
-.emptystate .big { margin: 0; font: 600 32px/1.1 var(--display); }
+.emptystate .big { margin: 0; font: 700 32px/1.1 var(--display); letter-spacing: -0.02em; }
 .hero { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.hero > div, .fig { display: flex; flex-direction: column; padding: 16px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); }
-.hero b { font: 600 44px/1 var(--display); font-variant-numeric: tabular-nums; color: var(--accent); }
-.hero span, .fig span { font-weight: 700; }
-.hero small, .fig small { color: var(--muted); font-size: 13px; }
+.hero > div, .fig { display: flex; flex-direction: column; gap: 4px; padding: 16px 0; border-top: 1px solid var(--line); }
+.hero b { font: 700 56px/1 var(--display); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: var(--accent); }
+.hero span, .fig span, .hero small, .fig small, .bn { color: var(--muted); }
 .stats section { display: flex; flex-direction: column; gap: 10px; }
 .stats .sub { margin: 0; }
 .hmwrap { overflow-x: auto; }
 .heatmap { display: grid; grid-template-rows: repeat(7, 1fr); grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px; min-width: 240px; max-width: 560px; }
-.hm { aspect-ratio: 1; border-radius: 3px; background: var(--surface-2); }
+/* Heatmap squares: the one filled colour in the app (a data graphic), shades of the accent on black. */
+.hm { aspect-ratio: 1; border-radius: 2px; background: var(--surface-2); }
 .hm.none { background: transparent; }
-.hm.l1 { background: color-mix(in srgb, var(--accent) 30%, var(--surface-2)); }
-.hm.l2 { background: color-mix(in srgb, var(--accent) 55%, var(--surface-2)); }
-.hm.l3 { background: color-mix(in srgb, var(--accent) 80%, var(--surface-2)); }
+.hm.l1 { background: color-mix(in srgb, var(--accent) 30%, #000); }
+.hm.l2 { background: color-mix(in srgb, var(--accent) 55%, #000); }
+.hm.l3 { background: color-mix(in srgb, var(--accent) 80%, #000); }
 .hm.l4 { background: var(--accent); }
-.bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.bar { display: grid; grid-template-columns: 3.2em 1fr 3em 2.6em; gap: 10px; align-items: center; font-variant-numeric: tabular-nums; }
-.bname { font-weight: 700; }
-.track { height: 14px; border-radius: 7px; background: var(--surface-2); overflow: hidden; }
-.track i { display: block; height: 100%; background: var(--c); border-radius: 7px; }
-.bval { text-align: right; font-weight: 700; }
-.bn, .muted { color: var(--muted); font-size: 13px; }
+.bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.bar { display: grid; grid-template-columns: 3.4em 1fr 3em 2.6em; gap: 10px; align-items: center; font-variant-numeric: tabular-nums; }
+.bname { font-weight: 700; color: var(--c); }
+/* Thin stroke in the note's colour. */
+.track { height: 2px; background: var(--line); overflow: hidden; }
+.track i { display: block; height: 100%; background: var(--c); }
+.bval { text-align: right; font-weight: 700; color: var(--c); }
 .bn { text-align: right; }
+.muted { color: var(--muted); }
 .figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
-.fig b { font: 600 28px/1.1 var(--display); font-variant-numeric: tabular-nums; }
+.fig b { font: 700 32px/1.1 var(--display); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }

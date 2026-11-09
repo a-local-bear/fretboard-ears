@@ -2,10 +2,10 @@
 // The block between the STAMP markers is rewritten by tools/stamp_version.py; don't edit it by hand.
 
 // STAMP:BEGIN
-const CACHE = 'fe-8cbde23119';
+const CACHE = 'fe-9486f6a428';
 const PRECACHE = [
   "./",
-  "fonts/fraunces-latin-wght-normal.woff2",
+  "fonts/jetbrains-mono-latin-wght-normal.woff2",
   "fonts/manrope-latin-wght-normal.woff2",
   "icons/apple-touch-icon.png",
   "icons/icon-192.png",

@@ -60,7 +60,10 @@ const chapter = () => chapterById(S.chapterId);
 const level = () => levelsFor(S.chapterId)[S.level];
 const degrees = () => S.ctx.pool; // note ids: semitones above the tonic
 const midiOfNote = (d) => S.ctx.tonic + d;
-const noteName = (d) => (S.settings.labels === 'letters' ? letterName(d, S.ctx.keyPc, S.ctx.mode) : solfegeName(d));
+const noteText = (d) => (S.settings.labels === 'letters' ? letterName(d, S.ctx.keyPc, S.ctx.mode) : solfegeName(d));
+/** Every note name the UI shows goes through here so it always carries its colour (.deg, --c). */
+const coloredName = (d, text = noteText(d)) => `<span class="deg" style="--c:${noteColor(d)}">${esc(text)}</span>`;
+const noteName = (d) => coloredName(d);
 const keyLabel = () => keyName(S.ctx.keyPc, S.ctx.mode);
 const clearTimer = () => { clearTimeout(timer); timer = null; };
 
@@ -80,16 +83,16 @@ function render() {
 const btn = (action, label, cls = '', extra = '') =>
   `<button class="btn ${cls}" data-action="${action}" data-focus-key="${action}${extra ? '-' + esc(extra) : ''}" ${extra ? `data-arg="${esc(extra)}"` : ''}>${label}</button>`;
 
-const topbar = (title, back) => `
+const topbar = (title, back, sub = '') => `
   <header class="topbar">
     ${back ? `<button class="iconbtn" data-action="${back}" data-focus-key="back" aria-label="Back">←</button>` : '<span class="brandmark" aria-hidden="true"></span>'}
-    <h1>${title}</h1>
+    ${sub ? `<div class="titles"><span class="tsub">${sub}</span><h1>${title}</h1></div>` : `<h1>${title}</h1>`}
     ${S.screen === 'home' ? `<button class="iconbtn" data-action="settings" data-focus-key="settings" aria-label="Settings">⚙</button>` : '<span class="iconbtn-spacer"></span>'}
   </header>`;
 
 const board = (opts = {}) => fretboardSVG({
   dots: degrees().flatMap((id) => S.ctx.positions.get(id).map((pos) => ({ id, pos }))),
-  frame: S.ctx.frame, labelOf: noteName, nameOf: solfegeName, hidden: S.settings.labels === 'hidden',
+  frame: S.ctx.frame, labelOf: noteText, nameOf: solfegeName, hidden: S.settings.labels === 'hidden',
   vertical: S.vertical, ...opts,
 });
 
@@ -152,7 +155,7 @@ const SCREENS = {
           return `<li><button class="levelcard ${best != null && isPassed(best) ? 'passed' : ''}" data-action="level" data-arg="${l.idx}" data-focus-key="level-${l.idx}">
             <span class="lnum">${esc(l.name)}</span>
             <span class="lnotes">${first.map((d) => `<i style="--c:${noteColor(d)}"></i>`).join('')}</span>
-            <span class="lnames">${esc(l.tag || (l.random ? 'New key every time' : first.length ? `${solfegeName(first[0])} → ${solfegeName(probe.pool[probe.pool.length - 1])}` : ''))}</span>
+            <span class="lnames">${l.tag ? esc(l.tag) : l.random ? 'New key every time' : first.length ? `${coloredName(first[0], solfegeName(first[0]))} → ${coloredName(probe.pool[probe.pool.length - 1], solfegeName(probe.pool[probe.pool.length - 1]))}` : ''}</span>
             <span class="lbest">${best == null ? 'Not played' : `Best ${best}/${ROUNDS}`}</span>
           </button></li>`;
         }).join('')}
@@ -165,10 +168,10 @@ const SCREENS = {
     const ds = degrees();
     const newest = ds[ds.length - 1];
     const intro = level().grow != null
-      ? `New note: <b>${esc(solfegeName(newest))}</b>${S.settings.labels === 'letters' ? ` (${esc(letterName(newest, S.ctx.keyPc, S.ctx.mode))})` : ''}.`
-      : `${ds.length} notes, ${ds.length > 8 ? 'from ' : ''}<b>${esc(noteName(ds[0]))}</b> to <b>${esc(noteName(newest))}</b>.`;
+      ? `New note: <b>${coloredName(newest, solfegeName(newest))}</b>${S.settings.labels === 'letters' ? ` (${coloredName(newest, letterName(newest, S.ctx.keyPc, S.ctx.mode))})` : ''}.`
+      : `${ds.length} notes, ${ds.length > 8 ? 'from ' : ''}<b>${noteName(ds[0])}</b> to <b>${noteName(newest)}</b>.`;
     const where = S.ctx.positions.get(newest).length > 1 ? 'Every position of a note counts as that note.' : '';
-    return `${topbar(esc(level().name), 'levels')}
+    return `${topbar(esc(level().name), 'levels', esc(chapter().name))}
     <main class="screen explore">
       <p class="keyline">${esc(keyLabel())}</p>
       <p class="lede">${intro} ${where} ${S.mic === 'on' ? 'Tap the dots to hear each one, or play them to check the mic hears you' : 'Tap the dots to hear each one'}, then start.</p>
@@ -188,7 +191,7 @@ const SCREENS = {
       const cls = a ? (a.heard === a.answered ? 'ok' : 'bad') : i === S.round ? 'now' : '';
       return `<i class="${cls}"></i>`;
     }).join('');
-    return `${topbar(`${esc(chapter().name)} · ${esc(level().name)}`, 'levels')}
+    return `${topbar(esc(level().name), 'levels', esc(chapter().name))}
     <main class="screen play">
       <div class="roundbar" aria-label="Round ${Math.min(S.round + 1, ROUNDS)} of ${ROUNDS}, ${score} correct">
         <span class="pips">${pips}</span>
@@ -214,11 +217,11 @@ const SCREENS = {
     }
     const confusions = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => {
       const [h, ans] = k.split('>').map(Number);
-      return `<li>Heard <b>${esc(noteName(h))}</b>, answered <b>${esc(noteName(ans))}</b>${n > 1 ? ` ×${n}` : ''}</li>`;
+      return `<li>Heard <b>${noteName(h)}</b>, answered <b>${noteName(ans)}</b>${n > 1 ? ` ×${n}` : ''}</li>`;
     }).join('');
     const nxt = nextLevel(S.chapterId, S.level);
     const canNext = !!nxt;
-    return `${topbar(esc(level().name), 'levels')}
+    return `${topbar(esc(level().name), 'levels', esc(chapter().name))}
     <main class="screen results">
       <p class="keyline">${esc(keyLabel())}</p>
       <div class="scorecard ${passed ? 'pass' : 'fail'}">
@@ -255,13 +258,13 @@ const SCREENS = {
       ? `<i class="hm l${c.level}" title="${c.key}: ${c.count} note${c.count === 1 ? '' : 's'}"></i>`
       : '<i class="hm none"></i>').join('')).join('');
     const pct = (x) => `${Math.round(x * 100)}%`;
-    const bars = degreeAccuracy(agg).map((d) => `<li class="bar">
+    const bars = degreeAccuracy(agg).map((d) => `<li class="bar" style="--c:${noteColor(d.degree)}">
         <span class="bname">${esc(solfegeName(d.degree))}</span>
-        <span class="track"><i style="--c:${noteColor(d.degree)};width:${Math.round(d.acc * 100)}%"></i></span>
+        <span class="track"><i style="width:${Math.round(d.acc * 100)}%"></i></span>
         <span class="bval">${pct(d.acc)}</span>
         <span class="bn">${d.heard}</span></li>`).join('');
     const conf = topConfusions(agg, 3).map((c) =>
-      `<li>Heard <b>${esc(solfegeName(c.heard))}</b>, answered <b>${esc(solfegeName(c.answered))}</b> <span class="muted">×${c.n}</span></li>`).join('');
+      `<li>Heard <b>${coloredName(c.heard, solfegeName(c.heard))}</b>, answered <b>${coloredName(c.answered, solfegeName(c.answered))}</b> <span class="muted">×${c.n}</span></li>`).join('');
     const t7 = trend(log, at, 7);
     const t30 = trend(log, at, 30);
     const trendFig = (t, label) => {
@@ -325,8 +328,8 @@ function promptText() {
   if (S.phase === 'retry') return 'Not that one. Keep looking.';
   if (S.phase !== 'feedback' || !a) return S.mic === 'on' ? 'Which note was that? Play it or tap it.' : 'Which note was that?';
   return a.heard === a.answered
-    ? `Yes, ${esc(noteName(a.heard))}.`
-    : `There it is: ${esc(noteName(a.heard))}.`;
+    ? `Yes, ${noteName(a.heard)}.`
+    : `There it is: ${noteName(a.heard)}.`;
 }
 
 // ---------- flow ----------

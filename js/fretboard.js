@@ -47,7 +47,7 @@ export function fretboardSVG({ dots, frame, labelOf, nameOf, hidden = false, ver
   // Board
   const [bx, by] = P(along0, across0 - 14);
   const [bw, bh] = vertical ? [boardAcross + 28, boardAlong] : [boardAlong, boardAcross + 28];
-  s += `<rect class="wood" x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="3"/>`;
+  s += `<rect class="wood" x="${bx}" y="${by}" width="${bw}" height="${bh}" />`;
 
   // Inlays
   for (let f = lo + 1; f <= hi; f++) {
@@ -76,7 +76,7 @@ export function fretboardSVG({ dots, frame, labelOf, nameOf, hidden = false, ver
     const c = stringAcross(st);
     const [x1, y1] = P(along0, c);
     const [x2, y2] = P(along0 + boardAlong, c);
-    s += `<line class="string" stroke-width="${(2.6 - st * 0.32).toFixed(2)}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+    s += `<line class="string" stroke-width="${(1.8 - st * 0.2).toFixed(2)}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
     const [lx, ly] = vertical ? P(along0 - 18, c) : P(along0 - 22, c);
     s += `<text class="sname" x="${lx}" y="${ly}">${STRING_NAMES[st]}</text>`;
   }
@@ -93,10 +93,10 @@ export function fretboardSVG({ dots, frame, labelOf, nameOf, hidden = false, ver
     const state = states[d] || '';
     const fill = hidden ? 'var(--dot-neutral)' : noteColor(d);
     const text = hidden ? '' : labelOf(d);
-    s += `<g class="dot ${state}${hidden ? ' neutral' : ''}" data-action="tap" data-degree="${d}" transform="translate(${fnum(x)} ${fnum(y)})"` +
+    s += `<g class="dot ${state}${hidden ? ' neutral' : ''}" data-action="tap" data-degree="${d}" transform="translate(${fnum(x)} ${fnum(y)})" style="--c:${fill}"` +
       ` role="button" tabindex="${disabled ? -1 : 0}" aria-label="${hidden ? `String ${STRING_NAMES[st]}, fret ${f}` : nameOf(d)}">` +
       `<circle class="ring" r="${r + 5}"/>` +
-      `<circle class="disc" r="${r}" style="--c:${fill}"/>` +
+      `<circle class="disc" r="${r}"/>` +
       (text ? `<text class="dlabel" y="0.5" font-size="${text.length > 2 ? 10.5 : 12}">${text}</text>` : '') +
       `</g>`;
   }
