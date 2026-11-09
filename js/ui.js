@@ -16,12 +16,13 @@ import {
   streaks, heatmap, totals, degreeAccuracy, topConfusions, triesAfterMiss, avgResponseMs, trend,
 } from './stats.js';
 import {
-  ensureAudio, prerender, playNote, playReference, playArpeggio, stopAll, droneActive, now, setSound, setNoteLimit, quietAt,
+  ensureAudio, prerender, playNote, playReference, playOver, playArpeggio, stopAll, droneActive, now, setSound, setNoteLimit, quietAt,
 } from './audio.js';
 import { fretboardSVG } from './fretboard.js';
 import { startMic, stopMic, micActive, micSupported } from './mic.js';
 import { matchDegree, SHARP_NAMES } from './pitch.js';
 import { referenceFor } from './reference.js';
+import { chordsFor, voicing, pickOverChord } from './harmony.js';
 
 const CORRECT_DELAY = 1100;
 const RESOLVE_STEP = 0.75; // seconds per quarter note of the resolution (80 bpm)
@@ -43,6 +44,7 @@ const S = {
   posStates: {}, // 'string,fret' → dot state, for lighting one position of a note (the resolution)
   resolution: [], // note ids of the resolution being played, shown in the feedback line
   noteAt: 0, // context time of the current mystery note
+  overChord: null, // the chord (harmony.js) the current mystery note sounds over, or null
   noteMs: null, // ms from the mystery note sounding to the first tap (null if unknown)
   stats: null, // snapshot for the stats screen, taken when it opens
   result: null, // { score, newBest, passed }
@@ -325,6 +327,8 @@ const SCREENS = {
         <p class="hint">Cadence strums C–F–G–C. Do plays the root. Drone holds the root and fifth under the note until you answer (it plays Do instead while the mic is on, since the mic would hear it). Nothing is the hardest.</p>
         ${seg('refWhen', [['each', 'Every note'], ['level', 'Once per level']])}
         <p class="hint">Once per level plays it before the first note only. Hear key replays it any time.</p></section>
+      <section><h2 class="sub">Note over a chord</h2>${seg('over', [['off', 'Off'], ['main', 'I IV V'], ['any', 'Any chord']])}
+        <p class="hint">The cadence plays first as usual, then the note sounds over a random chord, so you hear how the same note changes colour with the harmony. The cadence replaces a drone or Do reference. Each answer is logged with its chord.</p></section>
       <section><h2 class="sub">Resolve to Do</h2>${seg('resolve', [['on', 'On'], ['off', 'Off']])}
         <p class="hint">After a correct answer, hear the note walk stepwise to the nearest Do.</p></section>
       <section><h2 class="sub">Sound</h2>${seg('sound', [['guitar', 'Electric guitar'], ['synth', 'Synth']])}
@@ -360,13 +364,15 @@ function go(screen) {
 
 const levelMidis = () => (S.ctx ? degrees().map(midiOfNote) : []);
 const cadenceMidis = () => (S.ctx ? S.ctx.cadence.chords.flat() : []);
+/** Every chord voicing of the level's key, when the mystery note may sound over a chord. */
+const overMidis = () => (S.ctx && S.settings.over !== 'off' ? chordsFor(S.ctx.mode).flatMap((c) => voicing(c, S.ctx.keyPc)) : []);
 
 function openLevel(index) {
   S.level = index;
   const { keyPc, mode } = pickKey(level(), S.keyPc);
   S.ctx = buildContext(S.chapterId, level(), keyPc, mode);
   go('explore');
-  if (ensureAudio()) prerender([...levelMidis(), ...cadenceMidis()]);
+  if (ensureAudio()) prerender([...levelMidis(), ...cadenceMidis(), ...overMidis()]);
 }
 
 function startLevel() {
@@ -388,7 +394,9 @@ function startRound() {
   S.noteAt = 0;
   render();
   if (!ensureAudio()) return;
-  S.noteAt = playReference(referenceFor(S.settings, S.round), S.ctx.tonic, S.ctx.cadence.chords);
+  S.overChord = pickOverChord(S.settings.over, S.ctx.mode);
+  const over = S.overChord && voicing(S.overChord, S.ctx.keyPc);
+  S.noteAt = playReference(referenceFor(S.settings, S.round), S.ctx.tonic, S.ctx.cadence.chords, { over });
   playNote(midiOfNote(S.deck[S.round]), S.noteAt);
 }
 
@@ -396,7 +404,8 @@ function replay() {
   if (!ensureAudio()) return;
   stopAll(undefined, true); // a drone keeps holding under the replayed note
   const d = S.deck[S.round];
-  playNote(midiOfNote(d), now() + 0.03);
+  if (S.overChord) playOver(voicing(S.overChord, S.ctx.keyPc), midiOfNote(d));
+  else playNote(midiOfNote(d), now() + 0.03);
 }
 
 /**
@@ -426,6 +435,7 @@ function answer(d, fromMic = false, pos = null) {
       // Added with keys and modes: the level id, the key's tonic (0 = C), the mode, and the exact notes
       // as semitones above the tonic (heard/answered store chromatic and higher-octave notes as 8 + that).
       lid: level().id, key: S.ctx.keyPc, mode: S.ctx.mode, hs: heard, as: S.answers[S.answers.length - 1].answered,
+      chord: S.overChord ? S.overChord.numeral : null, // roman numeral the note sounded over (null: none)
     }]);
     const wait = S.settings.resolve === 'on' ? playResolution(d, fromMic, pos) : 0;
     timer = setTimeout(advance, CORRECT_DELAY + wait);
@@ -597,7 +607,7 @@ const ACTIONS = {
     saveSettings(S.settings);
     if (key === 'sound') {
       setSound(value);
-      if (ensureAudio()) prerender([...levelMidis(), ...cadenceMidis()]);
+      if (ensureAudio()) prerender([...levelMidis(), ...cadenceMidis(), ...overMidis()]);
     }
     render();
   },

@@ -1,11 +1,12 @@
 // localStorage wrappers. Every access is guarded: storage can be missing or throw.
 
 import { normalizeProgress } from './progress.js';
+import { OVER_OPTIONS } from './harmony.js';
 import { addEntry, buildStats, validStats } from './stats.js';
 
 const KEYS = { settings: 'fe-settings', progress: 'fe-progress', log: 'fe-log', stats: 'fe-stats', key: 'fe-key' };
 const LOG_MAX = 5000;
-const DEFAULT_SETTINGS = { labels: 'solfege', ref: 'cadence', refWhen: 'each', resolve: 'on', sound: 'guitar', mic: false };
+const DEFAULT_SETTINGS = { labels: 'solfege', ref: 'cadence', refWhen: 'each', resolve: 'on', over: 'off', sound: 'guitar', mic: false };
 
 function read(key) {
   try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
@@ -21,6 +22,7 @@ export function loadSettings() {
     ref: ['cadence', 'do', 'drone', 'none'].includes(s.ref) ? s.ref : DEFAULT_SETTINGS.ref,
     refWhen: ['each', 'level'].includes(s.refWhen) ? s.refWhen : DEFAULT_SETTINGS.refWhen,
     resolve: ['on', 'off'].includes(s.resolve) ? s.resolve : DEFAULT_SETTINGS.resolve,
+    over: OVER_OPTIONS.includes(s.over) ? s.over : DEFAULT_SETTINGS.over,
     sound: ['guitar', 'synth'].includes(s.sound) ? s.sound : DEFAULT_SETTINGS.sound,
     mic: s.mic === true,
   };
