@@ -8,6 +8,7 @@ The goal is to learn intervals by ear and play what you can sing.
 
 ## What's in it
 
+- **A progression path** through the levels in eight stages. After each stage, a guide gives exercises over a backing loop so you put the new notes to use. The home screen always shows the next step.
 - **Levels** that grow one note at a time, across one string, three patterns and the whole neck.
   Major, minor and chromatic notes, in C or any key.
 - **Degree pairs, melodic dictation and sing-and-find**, to move from single notes to playing back phrases.

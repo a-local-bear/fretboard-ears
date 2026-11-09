@@ -4,8 +4,9 @@ import { normalizeProgress } from './progress.js';
 import { OVER_OPTIONS, normalizeBacking } from './harmony.js';
 import { addEntry, buildStats, validStats } from './stats.js';
 import { GAP_OPTIONS } from './listen.js';
+import { normalizeGuides } from './path.js';
 
-const KEYS = { settings: 'fe-settings', progress: 'fe-progress', log: 'fe-log', stats: 'fe-stats', key: 'fe-key', backing: 'fe-backing' };
+const KEYS = { settings: 'fe-settings', progress: 'fe-progress', log: 'fe-log', stats: 'fe-stats', key: 'fe-key', backing: 'fe-backing', path: 'fe-path' };
 const LOG_MAX = 5000;
 const DEFAULT_SETTINGS = { labels: 'solfege', ref: 'cadence', refWhen: 'each', resolve: 'on', over: 'off', sound: 'guitar', mic: false, adaptive: 'off', listenGap: '5', listenSpeak: 'on' };
 
@@ -46,6 +47,10 @@ export const saveKey = (k) => write(KEYS.key, k);
 /** The last backing track: { key, mode, slots (roman numerals), tempo, bars }, always valid. */
 export const loadBacking = () => normalizeBacking(read(KEYS.backing));
 export const saveBacking = (b) => write(KEYS.backing, normalizeBacking(b));
+
+/** Ids of the path guides the player marked done. */
+export const loadGuides = () => normalizeGuides(read(KEYS.path)?.guides);
+export const saveGuides = (guides) => write(KEYS.path, { guides: normalizeGuides(guides) });
 
 export function loadLog() {
   const log = read(KEYS.log);

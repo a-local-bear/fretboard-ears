@@ -303,3 +303,27 @@ button { font: inherit; color: inherit; }
 /* ---------- passive listening ---------- */
 .listen .lsopts { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 8px; text-align: center; }
 .listen .lsopts .hint { max-width: 46ch; }
+
+/* ---------- progression path ---------- */
+.nextup { width: 100%; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; text-align: left; padding: 18px; border-radius: var(--radius); border: 1px solid var(--accent); background: var(--surface); cursor: pointer; }
+.nextup:hover { background: var(--surface-2); }
+.nextup .keyline { text-align: left; }
+.sname { font-weight: 700; font-size: 18px; letter-spacing: -0.01em; }
+.steps { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.step { width: 100%; display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items: center; text-align: left; padding: 14px 4px; border: 0; border-bottom: 1px solid var(--line); background: transparent; cursor: pointer; }
+.step .sname { font-size: 16px; }
+.step:hover .sname { color: var(--accent); }
+.smark { font: 500 14px/1 var(--mono); color: var(--muted); text-align: center; }
+.step.guide .smark { color: var(--d4); }
+.step.done .smark, .step.done .cmeta { color: var(--ok); }
+.step.done .sname { color: var(--muted); }
+.step.now { background: var(--surface); }
+.step.now .smark, .step.now .cmeta { color: var(--accent); }
+.guide .slot { cursor: default; }
+.guide .slot:hover { border-color: var(--line-2); }
+.tries { display: flex; flex-direction: column; gap: 10px; }
+.tries .sub { margin: 0; }
+.tries ol { margin: 0; padding-left: 22px; display: grid; gap: 12px; }
+.tries li::marker { color: var(--accent); font-family: var(--mono); }
+.pathhint { text-align: center; }
+.pathhint b { color: var(--ink); }
