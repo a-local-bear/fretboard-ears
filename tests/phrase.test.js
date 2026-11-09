@@ -78,7 +78,7 @@ test('degree pairs cover every pair of the pool evenly', () => {
 test('every sequence level builds valid decks in every key', () => {
   for (const c of CHAPTERS) {
     for (const level of levelsFor(c.id).filter((l) => l.len > 1)) {
-      assert.ok(['pairs', 'dictation'].includes(level.family));
+      assert.ok(['pairs', 'dictation', 'sing'].includes(level.family));
       for (let keyPc = 0; keyPc < 12; keyPc++) {
         const mode = level.mode ?? 'major';
         const pool = buildContext(c.id, level, keyPc, mode).pool;

@@ -21,8 +21,8 @@ import {
   ensureAudio, prerender, playNote, playReference, playArpeggio, stopAll, now, setSound, setNoteLimit, quietAt,
 } from './audio.js';
 import { fretboardSVG } from './fretboard.js';
-import { startMic, stopMic, micActive, micSupported } from './mic.js';
-import { matchDegree, SHARP_NAMES } from './pitch.js';
+import { startMic, stopMic, micActive, micSupported, setVoice } from './mic.js';
+import { matchDegree, SHARP_NAMES, VoiceHold, voiceCue, VOICE } from './pitch.js';
 import { referenceFor } from './reference.js';
 
 const CORRECT_DELAY = 1100;
@@ -52,6 +52,7 @@ const S = {
   stats: null, // snapshot for the stats screen, taken when it opens
   result: null, // { score, newBest, passed }
   confirmReset: false,
+  sg: null, // sing-and-find: { pos (note being sung), fails, aided (heard it this note), first[] (sung first try, per note), note (hint) }
   mic: 'off', // off | starting | on | blocked (runtime state; the wish to use it is settings.mic)
   settings: loadSettings(),
   progress: loadProgress(),
@@ -78,6 +79,9 @@ const targets = () => [].concat(S.deck[S.round]);
 /** A round is right only if every note was right on the first try. */
 const roundOk = (a) => a.notes.length === a.len && a.notes.every((n) => n.heard === n.answered);
 const roundBad = (a) => a.notes.some((n) => n.heard !== n.answered);
+const singLevel = () => S.ctx != null && level().family === 'sing';
+/** No usable microphone for singing: unsupported here or refused. The player self-checks instead. */
+const singSelf = () => !micSupported() || S.mic === 'blocked';
 const keyLabel = () => keyName(S.ctx.keyPc, S.ctx.mode);
 const clearTimer = () => {
   clearTimeout(timer); timer = null;
@@ -92,6 +96,7 @@ function render() {
   if (html === lastHTML) return;
   lastHTML = html;
   lastHearing = ''; // the hearing label was re-created empty
+  lastVoice = '';
   const focusKey = document.activeElement?.dataset?.focusKey;
   app.innerHTML = html;
   if (focusKey) app.querySelector(`[data-focus-key="${focusKey}"]`)?.focus();
@@ -116,6 +121,11 @@ const board = (opts = {}) => fretboardSVG({
 const MIC_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
 
 function micBar() {
+  if (singLevel()) {
+    // Singing needs the mic whatever the setting says, so there is no toggle, only the state.
+    const label = S.mic === 'on' ? 'Listening' : S.mic === 'blocked' ? 'Mic blocked' : micSupported() ? 'Starting mic…' : 'No mic';
+    return `<div class="micbar"><span class="micstate ${S.mic === 'on' ? 'on' : ''}">${MIC_ICON}<span>${label}</span></span><span class="hearing" id="hearing"></span></div>`;
+  }
   if (!micSupported()) return '';
   const on = S.settings.mic;
   const label = !on ? 'Mic off' : S.mic === 'on' ? 'Listening' : S.mic === 'blocked' ? 'Mic blocked' : 'Starting mic…';
@@ -187,6 +197,23 @@ const SCREENS = {
     const intro = level().grow != null
       ? `New note: <b>${coloredName(newest, solfegeName(newest))}</b>${S.settings.labels === 'letters' ? ` (${coloredName(newest, letterName(newest, S.ctx.keyPc, S.ctx.mode))})` : ''}.`
       : `${ds.length} notes, ${ds.length > 8 ? 'from ' : ''}<b>${noteName(ds[0])}</b> to <b>${noteName(newest)}</b>.`;
+    if (singLevel()) {
+      const blocked = S.mic === 'blocked'
+        ? 'The microphone is blocked, so the app cannot hear you sing. Allow it for this site in your browser settings, then try again, or use self-check below.'
+        : !micSupported() ? 'The microphone is not available here (it needs a secure https page and a browser that allows it).' : '';
+      return `${topbar(esc(level().name), 'levels', esc(chapter().name))}
+    <main class="screen explore">
+      <p class="keyline">${esc(keyLabel())}</p>
+      <p class="lede">${intro} Each round shows ${level().len > 1 ? `${level().len} notes` : 'a note'} as text and plays none. <b>Sing</b> ${level().len > 1 ? 'them one by one' : 'it'} (any octave), then <b>find</b> ${level().len > 1 ? 'them' : 'it'} on the neck by tapping or playing. Tap the dots to hear each note first.</p>
+      ${micBar()}
+      ${blocked ? `<p class="micnote">${blocked}</p><p class="lede"><b>Self-check:</b> sing the note, tap Hear it to compare, then mark yourself right or wrong. Nothing is detected, so it is on your honour.</p>${S.mic === 'blocked' ? `<div class="actions">${btn('micretry', 'Try the mic again', 'ghost')}</div>` : ''}` : ''}
+      <div class="boardwrap">${board({ states: S.states })}</div>
+      <div class="actions">
+        ${btn('reference', refLabel(), 'ghost')}
+        ${btn('start', blocked ? 'Start with self-check' : 'Start', 'primary')}
+      </div>
+    </main>`;
+    }
     const phrase = level().len > 1 ? `Each round plays ${level().len} notes in a row: play them back one by one, in order.` : '';
     const where = S.ctx.positions.get(newest).length > 1 ? 'Every position of a note counts as that note.' : '';
     return `${topbar(esc(level().name), 'levels', esc(chapter().name))}
@@ -213,6 +240,7 @@ const SCREENS = {
     const cur = S.answers[S.round];
     const notePips = seq.length < 2 ? '' : `<div class="pips notepips" aria-label="Note ${S.pos + 1} of ${seq.length}">${seq.map((_, i) => {
       const n = cur?.notes[i];
+      if (S.phase === 'sing') return `<i class="${S.sg.first[i] === true ? 'ok' : S.sg.first[i] === false ? 'bad' : i === S.sg.pos ? 'now' : ''}"></i>`;
       const cls = n ? (n.heard === n.answered ? 'ok' : 'bad') : i === S.pos && S.phase !== 'feedback' ? 'now' : '';
       return `<i class="${cls}"></i>`;
     }).join('')}</div>`;
@@ -223,12 +251,15 @@ const SCREENS = {
         <span class="count">${Math.min(S.round + 1, ROUNDS)}/${ROUNDS}</span>
       </div>
       ${notePips}
+      ${singLevel() ? targetHTML() : ''}
       <p class="prompt">${promptText()}</p>
+      ${singLevel() && S.phase === 'sing' && !singSelf() ? '<p class="voicelive" id="voicelive"></p>' : ''}
       ${micBar()}
-      <div class="boardwrap">${board({ states: S.states, posStates: S.posStates, disabled: S.phase === 'feedback' })}</div>
+      <div class="boardwrap">${board({ states: S.states, posStates: S.posStates, disabled: S.phase === 'feedback' || S.phase === 'sing' })}</div>
       <div class="actions">
         ${btn('reference', refLabel(), 'ghost')}
-        ${btn('replay', 'Replay', 'primary')}
+        ${btn('replay', singLevel() && S.phase === 'sing' ? 'Hear it' : 'Replay', singLevel() && S.phase === 'sing' && singSelf() ? 'ghost' : 'primary')}
+        ${singLevel() && S.phase === 'sing' && singSelf() ? `${btn('selfno', 'Missed it', 'ghost')}${btn('selfyes', 'Got it', 'primary')}` : ''}
       </div>
     </main>`;
   },
@@ -255,6 +286,7 @@ const SCREENS = {
         <p class="verdict">${score === ROUNDS ? 'Perfect.' : passed ? 'Well done.' : 'Keep practising.'}</p>
         ${newBest ? '<p class="newbest">New best</p>' : ''}
       </div>
+      ${singLevel() ? singSummary() : ''}
       ${confusions ? `<h2 class="sub">Mix-ups</h2><ul class="confusions">${confusions}</ul>` : ''}
       <div class="actions">
         ${btn('levels', 'Levels', 'ghost')}
@@ -352,9 +384,38 @@ const SCREENS = {
   },
 };
 
+/** The round's target as large coloured text; the note being sung or found is marked. */
+function targetHTML() {
+  const seq = targets();
+  const at = S.phase === 'sing' ? S.sg.pos : S.pos;
+  const names = seq.map((d, i) => `<span class="tnote ${S.phase === 'feedback' || i === at ? 'cur' : i < at ? 'past' : ''}">${noteName(d)}</span>`);
+  return `<p class="target" aria-label="Target">${names.join('<span class="tsep"> → </span>')}</p>`;
+}
+
+function singSummary() {
+  const notes = S.answers.flatMap((a) => a.notes).filter((n) => n.sung != null);
+  const ok = notes.filter((n) => n.sung).length;
+  return `<p class="keyline">Sung on the first try: <b>${ok}</b> of ${notes.length} notes</p>`;
+}
+
+function singPrompt() {
+  const n = targets().length;
+  const which = n > 1 ? ` note ${S.sg.pos + 1} of ${n}` : '';
+  if (singSelf()) return `Sing${which}, tap Hear it to compare, then mark yourself.`;
+  if (S.mic !== 'on') return 'Starting the microphone…';
+  if (S.sg.note === 'again') return `Not quite. Sing${which} again.`;
+  if (S.sg.note === 'heard') return `Listen, then sing${which} again.`;
+  return `Sing${which}.`;
+}
+
 function promptText() {
+  if (singLevel() && S.phase === 'sing') return singPrompt();
   const seq = targets();
   const a = S.answers[S.round];
+  if (singLevel() && S.phase === 'listen') {
+    const how = S.mic === 'on' ? 'Tap it or play it.' : 'Tap it.';
+    return seq.length > 1 ? `Now find note ${S.pos + 1} of ${seq.length}. ${how}` : `Now find it on the neck. ${how}`;
+  }
   // The notes of the phrase found so far, as coloured names.
   const found = seq.slice(0, S.pos).map(noteName).join(' → ');
   const so = found ? `${found} → ` : '';
@@ -416,10 +477,106 @@ function startRound() {
   S.resolution = [];
   S.noteMs = null;
   S.noteAt = 0;
+  if (singLevel()) {
+    // Sing first: the cadence sets the key, the target is only shown, and nothing else is played.
+    S.phase = 'sing';
+    S.sg = { pos: 0, fails: 0, aided: false, first: [], note: '' };
+    voiceHold.reset(targetPc(), -Infinity);
+    render();
+    if (ensureAudio()) playReference(referenceFor(S.settings, S.round), S.ctx.tonic, S.ctx.cadence.chords);
+    return;
+  }
   render();
   if (!ensureAudio()) return;
   // Response time counts from the last note of the phrase sounding.
   S.noteAt = playPhrase(playReference(referenceFor(S.settings, S.round), S.ctx.tonic, S.ctx.cadence.chords));
+}
+
+// ---------- sing and find ----------
+
+const voiceHold = new VoiceHold();
+const targetPc = () => (((midiOfNote(targets()[S.sg.pos]) % 12) + 12) % 12);
+let lastVoice = '';
+
+/** One analysis frame of the voice (fractional MIDI or null) while a note is being sung. */
+function onVoiceFrame(midi, t) {
+  if (S.screen !== 'play' || S.phase !== 'sing' || !S.sg) return;
+  const r = voiceHold.push(midi, t);
+  showVoice(midi, r);
+  if (r.done) singAccepted();
+  else if (r.failed) singMissed();
+}
+
+function showVoice(midi, r) {
+  const el = document.getElementById('voicelive');
+  if (!el) return;
+  let html = '';
+  if (midi != null && r.cents != null) {
+    const nearest = Math.round(midi);
+    const off = (((nearest - S.ctx.tonic) % 12) + 12) % 12; // the note sung, named in the key, any octave
+    const cue = voiceCue(r.cents);
+    const filled = Math.min(3, Math.floor((r.held / VOICE.holdMs) * 3));
+    html = `${coloredName(off)} <span class="cue ${cue === 'in tune' ? 'good' : ''}">${cue}</span>${cue === 'in tune' ? ` <span class="holddots">${'●'.repeat(filled)}${'○'.repeat(3 - filled)}</span>` : ''}`;
+  }
+  if (html === lastVoice) return;
+  lastVoice = html;
+  el.innerHTML = html;
+}
+
+/** The sung note held steady: first-try if no failed attempt and no "Hear it" came before. */
+function singAccepted() {
+  S.sg.first[S.sg.pos] = !S.sg.aided;
+  nextSing();
+}
+
+/** An attempt ended without landing on the note; the second miss plays the note. */
+function singMissed() {
+  S.sg.aided = true;
+  S.sg.fails++;
+  S.sg.note = 'again';
+  if (S.sg.fails >= 2) return hearIt();
+  render();
+}
+
+/** Play the current target note (the only time the app sounds in the sing step) and sing again. */
+function hearIt() {
+  if (!S.sg) return;
+  S.sg.aided = true;
+  S.sg.fails = 0;
+  S.sg.note = 'heard';
+  voiceHold.reset(targetPc(), -Infinity);
+  if (ensureAudio()) {
+    stopAll();
+    playNote(midiOfNote(targets()[S.sg.pos]), now() + 0.03);
+  }
+  render();
+}
+
+function nextSing() {
+  const n = targets().length;
+  if (S.sg.pos < n - 1) {
+    S.sg.pos++;
+    S.sg.fails = 0;
+    S.sg.aided = false;
+    S.sg.note = '';
+    voiceHold.reset(targetPc(), performance.now() + 500); // let the last note die away
+  } else {
+    // All sung: now find them on the fretboard.
+    S.phase = 'listen';
+    S.pos = 0;
+    S.fresh = false;
+    S.noteAt = now();
+    S.noteMs = null;
+  }
+  lastVoice = '';
+  render();
+}
+
+/** Self-check: the player marks their own attempt. */
+function selfMark(ok) {
+  if (S.phase !== 'sing' || !S.sg) return;
+  S.sg.first[S.sg.pos] = ok && !S.sg.aided;
+  nextSing();
 }
 
 /** Play the round's whole phrase from time `at`; returns when its last note sounds. */
@@ -430,6 +587,7 @@ function playPhrase(at) {
 }
 
 function replay() {
+  if (singLevel() && S.phase === 'sing') return hearIt();
   if (!ensureAudio()) return;
   stopAll();
   playPhrase(now() + 0.03);
@@ -448,7 +606,7 @@ function answer(d, fromMic = false, pos = null) {
   const ok = d === heard;
   if (S.fresh) { S.states = {}; S.fresh = false; }
   if (S.phase === 'listen') {
-    (S.answers[S.round] ||= { len: seq.length, notes: [] }).notes.push({ heard, answered: d });
+    (S.answers[S.round] ||= { len: seq.length, notes: [] }).notes.push({ heard, answered: d, sung: singLevel() ? S.sg.first[p] : undefined });
     S.tries = 0;
     S.noteMs = S.noteAt ? Math.max(0, Math.round((now() - S.noteAt) * 1000)) : null;
   }
@@ -468,6 +626,8 @@ function answer(d, fromMic = false, pos = null) {
       lid: level().id, key: S.ctx.keyPc, mode: S.ctx.mode, hs: heard, as: first,
       // Added with sequence levels: the note's index in the phrase and the phrase length (0 and 1 for single notes).
       seq: p, len: seq.length,
+      // Added with sing-and-find: whether the note was sung correctly on the first try (no miss, no "Hear it").
+      ...(singLevel() ? { sung: S.sg.first[p] === true } : {}),
     }]);
     if (p < seq.length - 1) {
       // Next note of the phrase; its dots start clean and its response time from now.
@@ -563,10 +723,12 @@ function tapDot(d, pos = null) {
 // ---------- microphone ----------
 
 const micWanted = () =>
-  S.settings.mic && (S.screen === 'explore' || S.screen === 'play') && document.visibilityState === 'visible';
+  (S.settings.mic || singLevel()) && (S.screen === 'explore' || S.screen === 'play') && document.visibilityState === 'visible';
 
 /** Start or stop the mic to match the current screen and setting. Idempotent; called on every render. */
 function syncMic() {
+  // The voice handler listens only while a note is being sung; otherwise the guitar tracker answers.
+  setVoice(S.screen === 'play' && singLevel() && S.phase === 'sing' && S.sg && !singSelf() ? onVoiceFrame : null);
   if (!micSupported()) return;
   if (micWanted()) {
     if (!micActive() && S.mic === 'off') startListening();
@@ -636,6 +798,9 @@ const ACTIONS = {
     render();
   },
   replay: () => replay(),
+  selfyes: () => selfMark(true),
+  selfno: () => selfMark(false),
+  micretry: () => { if (S.mic === 'blocked') S.mic = 'off'; render(); },
   tap: (_, el) => tapDot(Number(el.dataset.degree), el.dataset.pos),
   retry: () => openLevel(S.level),
   next: () => {
