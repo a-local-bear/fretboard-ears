@@ -21,6 +21,7 @@ const PRECACHE = [
   "js/mic.js",
   "js/pitch.js",
   "js/progress.js",
+  "js/reference.js",
   "js/samples.js",
   "js/storage.js",
   "js/ui.js",

@@ -206,7 +206,7 @@ const SCREENS = {
     <main class="screen settings">
       <section><h2 class="sub">Dot labels</h2>${seg('labels', [['solfege', 'Solfège'], ['letters', 'Letters'], ['hidden', 'Hidden']])}
         <p class="hint">Hidden shows plain dots, so you answer by position only.</p></section>
-      <section><h2 class="sub">Before each note</h2>${seg('ref', [['cadence', 'Cadence'], ['do', 'Do'], ['none', 'Nothing']])}
+      <section><h2 class="sub">Reference</h2>${seg('ref', [['cadence', 'Cadence'], ['do', 'Do'], ['none', 'Nothing']])}
         <p class="hint">Cadence strums C–F–G–C. Do plays the root. Nothing is the hardest.</p>
         ${seg('refWhen', [['each', 'Every note'], ['level', 'Once per level']])}
         <p class="hint">Once per level plays it before the first note only. Hear key replays it any time.</p></section>
