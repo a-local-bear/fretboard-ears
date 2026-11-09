@@ -8,7 +8,7 @@ The goal is to learn intervals by ear and play what you can sing, then hear the 
 
 ## What's in it
 
-- **A progression path** in eleven stages, from your first four notes to learning whole songs by ear. Each stage explains what it trains, every step has a tip, and each stage ends with an in-depth guide of exercises over a backing loop, with tunes and progressions from the songbook to work out. The home screen always shows the next step.
+- **A progression path** in eleven stages, from your first four notes to learning whole songs by ear; random keys begin in stage 2 and each stage moves to a new part of the neck. Each stage explains what it trains, every step has a tip, and each stage ends with an in-depth guide of exercises over a backing loop, with tunes and progressions from the songbook to work out. The home screen always shows the next step.
 - **Ear drills** beyond single notes: major or minor chords, chord functions (I IV V, all of major, minor), progression dictation, naming famous progressions, major or minor tunes, finding the key of a melody, and phrases of real songs.
 - **A songbook** of public-domain tunes in solfège with their chords, and ten common progressions with songs that use them. Any key, melody and chords on their own or together, notes hidden until you've worked them out.
 - **Levels** that grow one note at a time, across one string, three patterns and the whole neck.
