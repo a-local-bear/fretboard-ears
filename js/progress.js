@@ -24,8 +24,10 @@ export const isPassed = (score) => score >= PASS_SCORE;
 export const bestScore = (progress, chapterId, level) => progress.best[levelKey(chapterId, level)] ?? null;
 
 /** Record a finished run; returns { progress, newBest }. Does not mutate the input. */
-export function recordScore(progress, chapterId, level, score) {
-  const key = levelKey(chapterId, level);
+export const recordScore = (progress, chapterId, level, score) => recordBest(progress, levelKey(chapterId, level), score);
+
+/** Record a finished run under any id (a level id or a drill id); returns { progress, newBest }. */
+export function recordBest(progress, key, score) {
   const prev = progress.best[key];
   const newBest = prev == null || score > prev;
   const best = newBest ? { ...progress.best, [key]: score } : progress.best;
