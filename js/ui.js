@@ -20,8 +20,9 @@ import {
 } from './stats.js';
 import { progressHTML } from './charts.js';
 import {
-  ensureAudio, prerender, playNote, playReference, playOver, playArpeggio, startLoop, stopLoop, loopActive, stopAll, droneActive, now, setSound, setNoteLimit, quietAt,
+  ensureAudio, prerender, playNote, playReference, playOver, playArpeggio, startLoop, stopLoop, loopActive, stopAll, droneActive, now, setSound, setNoteLimit, quietAt, callAt,
 } from './audio.js';
+import { GAP_OPTIONS, spoken, revealTimeline } from './listen.js';
 import { fretboardSVG } from './fretboard.js';
 import { startMic, stopMic, micActive, micSupported, setVoice } from './mic.js';
 import { matchDegree, SHARP_NAMES, VoiceHold, voiceCue, VOICE } from './pitch.js';
@@ -38,7 +39,7 @@ const MIC_NOTE_LIMIT = 1.6; // seconds the app's notes may ring while the mic li
 const VERTICAL_BELOW = 640;
 
 const S = {
-  screen: 'home', // home | levels | explore | play | results | settings | stats | backing
+  screen: 'home', // home | levels | explore | play | listen | results | settings | stats | backing
   chapterId: 'one',
   level: 0, // index into levelsFor(chapterId)
   keyPc: loadKey(), // tonic of the fixed-key levels (0 = C … 11 = B)
@@ -60,6 +61,7 @@ const S = {
   result: null, // { score, newBest, passed }
   confirmReset: false,
   session: null, // daily practice: { plan, i, scores: [{ label, name, score }], streak?, done? } while one is running
+  ls: null, // passive listening: { n (rounds played), phase: prompt | think | reveal, paused } while it runs
   sg: null, // sing-and-find: { pos (note being sung), fails, aided (heard it this note), first[] (sung first try, per note), note (hint) }
   mic: 'off', // off | starting | on | blocked (runtime state; the wish to use it is settings.mic)
   bt: { ...loadBacking(), playing: false, cur: null, sel: 0, flash: null }, // backing track: saved fields + runtime state
@@ -225,6 +227,7 @@ const SCREENS = {
       <div class="boardwrap">${board({ states: S.states })}</div>
       <div class="actions">
         ${btn('reference', refLabel(), 'ghost')}
+        ${canSpeak() ? btn('listen', 'Listen hands-free', 'ghost') : ''}
         ${btn('start', blocked ? 'Start with self-check' : 'Start', 'primary')}
       </div>
     </main>`;
@@ -239,6 +242,7 @@ const SCREENS = {
       <div class="boardwrap">${board({ states: S.states })}</div>
       <div class="actions">
         ${btn('reference', refLabel(), 'ghost')}
+        ${btn('listen', 'Listen hands-free', 'ghost')}
         ${btn('start', 'Start', 'primary')}
       </div>
     </main>`;
@@ -277,6 +281,40 @@ const SCREENS = {
         ${btn('replay', singLevel() && S.phase === 'sing' ? 'Hear it' : 'Replay', singLevel() && S.phase === 'sing' && singSelf() ? 'ghost' : 'primary')}
         ${singLevel() && S.phase === 'sing' && singSelf() ? `${btn('selfno', 'Missed it', 'ghost')}${btn('selfyes', 'Got it', 'primary')}` : ''}
       </div>
+    </main>`;
+  },
+
+  listen() {
+    const ls = S.ls;
+    const seq = targets();
+    const sing = singLevel();
+    const names = seq.map(noteName).join(' → ');
+    const many = seq.length > 1;
+    let text;
+    if (ls.paused) text = 'Paused.';
+    else if (ls.phase === 'prompt') text = sing ? `Sing ${names}.` : many ? `Listen to the ${seq.length} notes…` : 'Listen…';
+    else if (ls.phase === 'think') text = sing ? `Sing ${names}, then play ${many ? 'them' : 'it'}.` : `Your turn: play ${many ? 'them' : 'it'} on the guitar.`;
+    else {
+      const rest = S.resolution.length > 1 ? ` → ${S.resolution.slice(1).map(noteName).join(' → ')}` : '';
+      text = `${sing ? 'Sounds like' : 'It was'} ${names}${rest}`;
+    }
+    const seg = (key, opts) => `<div class="seg" role="radiogroup">${opts.map(([v, label]) =>
+      `<button role="radio" aria-checked="${S.settings[key] === v}" class="${S.settings[key] === v ? 'on' : ''}" data-action="set" data-arg="${key}:${v}" data-focus-key="set-${key}-${v}">${label}</button>`).join('')}</div>`;
+    return `${topbar(esc(level().name), 'explore', esc(chapter().name))}
+    <main class="screen play listen">
+      <p class="keyline">${esc(keyLabel())} · round ${ls.n} · not scored</p>
+      <p class="prompt" aria-live="polite">${text}</p>
+      <div class="boardwrap">${board({ states: S.states, disabled: true })}</div>
+      <div class="actions">
+        ${btn('explore', 'Stop', 'ghost')}
+        ${btn('listenpause', ls.paused ? 'Resume' : 'Pause', 'primary')}
+      </div>
+      <section class="lsopts">
+        <span class="keylabel">Time to play</span>
+        ${seg('listenGap', GAP_OPTIONS.map((g) => [g, `${g} s`]))}
+        ${sing ? '' : `<span class="keylabel">Say the answer</span>${seg('listenSpeak', [['on', 'On'], ['off', 'Off']])}`}
+        <p class="hint">Plays the level on its own: ${{ cadence: 'the cadence, ', do: 'Do, ', drone: 'the drone, ', none: '' }[referenceFor(listenRef(), 0)]}the ${sing ? 'note to sing, spoken' : many ? 'notes' : 'note'}, a pause for you to play ${many ? 'them' : 'it'}, then the answer${S.settings.resolve === 'on' ? ' resolving to Do' : ''}. The screen stays on; you don't need to look at it.</p>
+      </section>
     </main>`;
   },
 
@@ -511,6 +549,7 @@ function promptText() {
 function go(screen) {
   clearTimer();
   btStop();
+  if (screen !== 'listen') listenStop();
   stopAll();
   if (screen !== 'settings') S.confirmReset = false;
   if (screen !== 'play') S.session = null; // leaving a session ends it; per-level progress is already saved
@@ -842,6 +881,146 @@ function playReferenceOnly() {
   playReference(mode === 'none' ? 'cadence' : mode, S.ctx.tonic, S.ctx.cadence.chords, { droneFor: 3 });
 }
 
+// ---------- passive listening ----------
+
+const LISTEN_NEXT = 1.6; // seconds of quiet after the answer before the next round
+const canSpeak = () => typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined';
+let lsCancels = []; // cancel functions of the pending callAt()s
+let lsToken = 0; // bumped on every clear, so a late speech `end` event of an old round does nothing
+let wakeLock = null;
+
+/** Settings as listening sees them: the mic is never on here. */
+const listenRef = () => ({ ...S.settings, mic: false });
+const lsAt = (when, fn) => { lsCancels.push(callAt(when, fn)); };
+const spokenNames = (seq) => seq.map((d) => spoken(S.settings.labels === 'letters' ? letterName(d, S.ctx.keyPc, S.ctx.mode) : solfegeName(d))).join(', ');
+
+function lsClear() {
+  lsCancels.forEach((c) => c());
+  lsCancels = [];
+  lsToken++;
+  if (canSpeak()) speechSynthesis.cancel();
+}
+
+/** Keep the screen on while listening, so the phone can lie on the music stand. */
+async function holdScreen(on) {
+  try {
+    if (on && !wakeLock && navigator.wakeLock) {
+      const lock = await navigator.wakeLock.request('screen');
+      if (!S.ls || S.ls.paused) { lock.release(); return; }
+      wakeLock = lock;
+      lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
+    } else if (!on && wakeLock) {
+      const lock = wakeLock;
+      wakeLock = null;
+      await lock.release();
+    }
+  } catch { /* not supported or refused */ }
+}
+
+/** Speak `text`, then call `then` (also if speech fails or its end event never comes). */
+function say(text, then) {
+  const tok = lsToken;
+  let done = false;
+  const next = () => { if (!done && tok === lsToken) { done = true; then(); } };
+  if (!canSpeak()) return next();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'en-US';
+  u.rate = 0.9;
+  u.onend = next;
+  u.onerror = next;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+  lsAt(now() + 2 + text.split(/\s+/).length * 0.6, next);
+}
+
+function startListen() {
+  if (!ensureAudio()) return;
+  S.ls = { n: 0, phase: 'prompt', paused: false };
+  S.deck = [];
+  S.round = -1;
+  go('listen');
+  holdScreen(true);
+  listenRound();
+}
+
+function listenStop() {
+  if (!S.ls) return;
+  lsClear();
+  holdScreen(false);
+  S.ls = null;
+}
+
+/**
+ * One round: the reference, then the note(s) (a sing level speaks the target instead), then the
+ * chosen pause, then the answer. The deck is dealt like a normal level and dealt again when used up.
+ */
+function listenRound() {
+  lsClear();
+  stopAll();
+  const ls = S.ls;
+  S.round++;
+  if (S.round >= S.deck.length) { S.deck = makeDeck(S.settings.adaptive === 'on'); S.round = 0; }
+  ls.n++;
+  ls.phase = 'prompt';
+  S.states = {};
+  S.posStates = {};
+  S.resolution = [];
+  render();
+  if (!ensureAudio()) return;
+  const seq = targets();
+  const gap = Number(S.settings.listenGap);
+  const think = (at) => {
+    lsAt(at, () => { ls.phase = 'think'; render(); });
+    lsAt(at + gap, listenReveal);
+  };
+  if (singLevel()) {
+    S.overChord = null;
+    const at = playReference(referenceFor(listenRef(), ls.n - 1), S.ctx.tonic, S.ctx.cadence.chords);
+    lsAt(at, () => say(`Sing ${spokenNames(seq)}`, () => think(now())));
+    return;
+  }
+  S.overChord = pickOverChord(S.settings.over, S.ctx.mode);
+  const over = S.overChord && voicing(S.overChord, S.ctx.keyPc);
+  think(playPhrase(playReference(referenceFor(listenRef(), ls.n - 1), S.ctx.tonic, S.ctx.cadence.chords, { over })));
+}
+
+/** The answer: its name spoken (if chosen), then the note(s) again walking to Do, then the next round. */
+function listenReveal() {
+  const seq = targets();
+  stopAll(); // ends a drone
+  S.ls.phase = 'reveal';
+  S.resolution = S.settings.resolve === 'on' ? resolutionOf(seq[seq.length - 1], S.ctx.mode, S.ctx.tonic) : [];
+  S.states = Object.fromEntries(seq.map((d) => [d, 'correct']));
+  render();
+  const play = () => {
+    const path = S.resolution.length ? S.resolution : [seq[seq.length - 1]];
+    const { notes, end } = revealTimeline(seq, path, PHRASE_STEP, RESOLVE_STEP);
+    const t0 = now() + 0.05;
+    for (const { note, t } of notes) playNote(midiOfNote(note), t0 + t);
+    lsAt(t0 + end + LISTEN_NEXT, listenRound);
+  };
+  if (S.settings.listenSpeak === 'on' && !singLevel()) say(spokenNames(seq), play);
+  else play();
+}
+
+function listenPause() {
+  const ls = S.ls;
+  if (!ls) return;
+  if (ls.paused) {
+    ls.paused = false;
+    holdScreen(true);
+    S.round--; // replay the interrupted round
+    ls.n--;
+    listenRound();
+  } else {
+    ls.paused = true;
+    lsClear();
+    stopAll();
+    holdScreen(false);
+    render();
+  }
+}
+
 function tapDot(d, pos = null) {
   if (S.screen === 'explore') {
     if (!ensureAudio()) return;
@@ -1063,6 +1242,9 @@ const ACTIONS = {
   level: (arg) => openLevel(Number(arg)),
   key: (arg) => { S.keyPc = Number(arg); saveKey(S.keyPc); render(); },
   start: () => startLevel(),
+  explore: () => go('explore'),
+  listen: () => startListen(),
+  listenpause: () => listenPause(),
   reference: () => playReferenceOnly(),
   mic: () => {
     S.settings = { ...S.settings, mic: !S.settings.mic };
@@ -1130,6 +1312,7 @@ function onKey(e) {
     if (S.screen === 'explore') startLevel();
     else if (S.screen === 'play') (S.phase === 'feedback' ? advance() : replay());
     else if (S.screen === 'backing') ACTIONS.btplay();
+    else if (S.screen === 'listen') listenPause();
     else if (S.screen === 'results') {
       const nxt = nextLevel(S.chapterId, S.level);
       if (nxt) ACTIONS.next();
@@ -1158,6 +1341,7 @@ export function mount(root) {
   app.addEventListener('change', onRange);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') btStop(); // timers throttle in the background; don't let the loop stutter
+    else if (S.ls && !S.ls.paused) holdScreen(true); // the browser drops the wake lock when the page is hidden
     render();
   });
   render();
