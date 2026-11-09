@@ -15,6 +15,7 @@ const CHORD_GAP = 0.7; // seconds between cadence chords
 const CADENCE_TO_NOTE = 1.15;
 const DO_TO_NOTE = 0.9;
 const STRUM_STEP = 0.022;
+const CHORD_DAMP = 0.05; // seconds of fade on the old chord at a chord change
 
 /** Create or resume the context. Call from a user gesture (required on mobile). */
 export function ensureAudio() {
@@ -131,7 +132,7 @@ export function stopAll(dur = 0.06) {
   voices.clear();
 }
 
-function strum(notes, when, gain = 0.38) {
+function strum(notes, when, gain = 0.3) {
   return notes.map((m, i) => playNote(m, when + i * STRUM_STEP, gain));
 }
 
@@ -145,7 +146,15 @@ export function playReference(mode, doMidi) {
   let refVoices = [];
   let noteAt = t0;
   if (mode === 'cadence') {
-    CADENCE.forEach((name, i) => { refVoices = refVoices.concat(strum(CHORDS[name], t0 + i * CHORD_GAP)); });
+    let prev = [];
+    CADENCE.forEach((name, i) => {
+      const at = t0 + i * CHORD_GAP;
+      // Damp the previous chord as the next one is strummed, like a guitarist's hand would,
+      // so its notes don't ring against the new chord.
+      for (const v of prev) if (v) fadeVoice(v, at - CHORD_DAMP, CHORD_DAMP + 0.03);
+      prev = strum(CHORDS[name], at);
+    });
+    refVoices = prev;
     noteAt = t0 + (CADENCE.length - 1) * CHORD_GAP + CADENCE_TO_NOTE;
   } else if (mode === 'do') {
     refVoices.push(playNote(doMidi, t0));
