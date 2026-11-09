@@ -1,14 +1,16 @@
 // App state, screens and input handling. Full re-render via innerHTML, skipped when nothing changed.
 
 import {
-  CHAPTERS, LEVELS_PER_CHAPTER, ROUNDS, SOLFEGE, LETTERS, DEGREE_COLORS, CHORDS,
-  midiOf, levelDegrees, chapterById,
+  CHAPTERS, ROUNDS, FAMILIES, noteColor, solfegeName, letterName, keyName, keyLetter, degreeIndex,
+  chapterById, levelsFor, buildContext, pickKey,
 } from './data.js';
 import { buildDeck } from './deck.js';
 import {
   isPassed, bestScore, recordScore, nextLevel, playedCount,
 } from './progress.js';
-import { loadSettings, saveSettings, loadProgress, saveProgress, appendLog, requestPersistence } from './storage.js';
+import {
+  loadSettings, saveSettings, loadProgress, saveProgress, loadKey, saveKey, appendLog, requestPersistence,
+} from './storage.js';
 import {
   ensureAudio, prerender, playNote, playReference, playArpeggio, stopAll, now, setSound, setNoteLimit, quietAt,
 } from './audio.js';
@@ -23,7 +25,9 @@ const VERTICAL_BELOW = 640;
 const S = {
   screen: 'home', // home | levels | explore | play | results | settings
   chapterId: 'one',
-  level: 0,
+  level: 0, // index into levelsFor(chapterId)
+  keyPc: loadKey(), // tonic of the fixed-key levels (0 = C … 11 = B)
+  ctx: null, // buildContext() of the level being explored or played: key, mode, pool, positions
   deck: [],
   round: 0,
   answers: [], // { heard, answered }
@@ -46,8 +50,11 @@ let resetTimer = null;
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const chapter = () => chapterById(S.chapterId);
-const degrees = () => levelDegrees(S.level);
-const noteName = (d) => (S.settings.labels === 'letters' ? LETTERS[d] : SOLFEGE[d]);
+const level = () => levelsFor(S.chapterId)[S.level];
+const degrees = () => S.ctx.pool; // note ids: semitones above the tonic
+const midiOfNote = (d) => S.ctx.tonic + d;
+const noteName = (d) => (S.settings.labels === 'letters' ? letterName(d, S.ctx.keyPc, S.ctx.mode) : solfegeName(d));
+const keyLabel = () => keyName(S.ctx.keyPc, S.ctx.mode);
 const clearTimer = () => { clearTimeout(timer); timer = null; };
 
 // ---------- rendering ----------
@@ -74,7 +81,9 @@ const topbar = (title, back) => `
   </header>`;
 
 const board = (opts = {}) => fretboardSVG({
-  notes: chapter().notes, degrees: degrees(), labels: S.settings.labels, vertical: S.vertical, ...opts,
+  dots: degrees().flatMap((id) => S.ctx.positions.get(id).map((pos) => ({ id, pos }))),
+  frame: S.ctx.frame, labelOf: noteName, nameOf: solfegeName, hidden: S.settings.labels === 'hidden',
+  vertical: S.vertical, ...opts,
 });
 
 const MIC_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
@@ -96,14 +105,14 @@ const SCREENS = {
   home() {
     return `${topbar('Fretboard Ears')}
     <main class="screen home">
-      <p class="lede">Hear a note in C major, then find it on the neck.</p>
+      <p class="lede">Hear a note in a key, then find it on the neck.</p>
       <ol class="chapters">
         ${CHAPTERS.map((c, i) => {
           const played = playedCount(S.progress, c.id);
           return `<li><button class="chapter" data-action="chapter" data-arg="${c.id}" data-focus-key="chapter-${c.id}">
             <span class="cnum">${i + 1}</span>
             <span class="cbody"><span class="cname">${esc(c.name)}</span><span class="cdesc">${esc(c.desc)}</span></span>
-            <span class="cmeta">${played ? `${played}/${LEVELS_PER_CHAPTER} played` : ''}</span>
+            <span class="cmeta">${played ? `${played}/${levelsFor(c.id).length} played` : ''}</span>
           </button></li>`;
         }).join('')}
       </ol>
@@ -112,30 +121,49 @@ const SCREENS = {
 
   levels() {
     const c = chapter();
+    const levels = levelsFor(c.id);
+    const keys = Array.from({ length: 12 }, (_, pc) => `<button class="keychip ${pc === S.keyPc ? 'on' : ''}" data-action="key" data-arg="${pc}" data-focus-key="key-${pc}" aria-pressed="${pc === S.keyPc}">${esc(keyLetter(pc))}</button>`).join('');
+    const sections = [];
+    for (const l of levels) {
+      const last = sections[sections.length - 1];
+      if (last && last.family === l.family) last.levels.push(l);
+      else sections.push({ family: l.family, levels: [l] });
+    }
     return `${topbar(esc(c.name), 'home')}
     <main class="screen levels">
       <p class="lede">${esc(c.desc)}</p>
-      <ol class="levelgrid">
-        ${Array.from({ length: LEVELS_PER_CHAPTER }, (_, l) => {
-          const best = bestScore(S.progress, c.id, l);
-          const ds = levelDegrees(l);
-          return `<li><button class="levelcard ${best != null && isPassed(best) ? 'passed' : ''}" data-action="level" data-arg="${l}" data-focus-key="level-${l}">
-            <span class="lnum">Level ${l + 1}</span>
-            <span class="lnotes">${ds.map((d) => `<i style="--c:${DEGREE_COLORS[d]}"></i>`).join('')}</span>
-            <span class="lnames">${esc(noteName(0))} → ${esc(noteName(ds[ds.length - 1]))}</span>
+      <div class="keybar"><span class="keylabel" id="keylabel">Key</span><div class="keychips" role="group" aria-labelledby="keylabel">${keys}</div></div>
+      <p class="keynote">Fixed-key levels play in ${esc(keyName(S.keyPc, 'major'))} or ${esc(keyName(S.keyPc, 'minor'))}. Random-key levels pick their own.</p>
+      ${sections.map(({ family, levels: ls }) => `<section class="family">
+        <h2 class="sub">${esc(FAMILIES[family].name)}${family === 'major' ? ` <span class="fmode">${esc(keyName(S.keyPc, 'major'))}</span>` : family.startsWith('minor') ? ` <span class="fmode">${esc(keyName(S.keyPc, 'minor'))}</span>` : ''}</h2>
+        <ol class="levelgrid">
+        ${ls.map((l) => {
+          const best = bestScore(S.progress, c.id, l.idx);
+          const probe = buildContext(c.id, l, l.random ? 0 : S.keyPc, l.mode ?? 'major');
+          const first = probe.pool.filter((d) => d <= 12);
+          return `<li><button class="levelcard ${best != null && isPassed(best) ? 'passed' : ''}" data-action="level" data-arg="${l.idx}" data-focus-key="level-${l.idx}">
+            <span class="lnum">${esc(l.name)}</span>
+            <span class="lnotes">${first.map((d) => `<i style="--c:${noteColor(d)}"></i>`).join('')}</span>
+            <span class="lnames">${esc(l.tag || (l.random ? 'New key every time' : first.length ? `${solfegeName(first[0])} → ${solfegeName(probe.pool[probe.pool.length - 1])}` : ''))}</span>
             <span class="lbest">${best == null ? 'Not played' : `Best ${best}/${ROUNDS}`}</span>
           </button></li>`;
         }).join('')}
-      </ol>
+        </ol>
+      </section>`).join('')}
     </main>`;
   },
 
   explore() {
     const ds = degrees();
     const newest = ds[ds.length - 1];
-    return `${topbar(`Level ${S.level + 1}`, 'levels')}
+    const intro = level().grow != null
+      ? `New note: <b>${esc(solfegeName(newest))}</b>${S.settings.labels === 'letters' ? ` (${esc(letterName(newest, S.ctx.keyPc, S.ctx.mode))})` : ''}.`
+      : `${ds.length} notes, ${ds.length > 8 ? 'from ' : ''}<b>${esc(noteName(ds[0]))}</b> to <b>${esc(noteName(newest))}</b>.`;
+    const where = S.ctx.positions.get(newest).length > 1 ? 'Every position of a note counts as that note.' : '';
+    return `${topbar(esc(level().name), 'levels')}
     <main class="screen explore">
-      <p class="lede">New note: <b>${esc(SOLFEGE[newest])}</b>${S.settings.labels === 'letters' ? ` (${LETTERS[newest]})` : ''}. ${S.mic === 'on' ? 'Tap the dots to hear each one, or play them to check the mic hears you' : 'Tap the dots to hear each one'}, then start.</p>
+      <p class="keyline">${esc(keyLabel())}</p>
+      <p class="lede">${intro} ${where} ${S.mic === 'on' ? 'Tap the dots to hear each one, or play them to check the mic hears you' : 'Tap the dots to hear each one'}, then start.</p>
       ${micBar()}
       <div class="boardwrap">${board({ states: S.states })}</div>
       <div class="actions">
@@ -152,7 +180,7 @@ const SCREENS = {
       const cls = a ? (a.heard === a.answered ? 'ok' : 'bad') : i === S.round ? 'now' : '';
       return `<i class="${cls}"></i>`;
     }).join('');
-    return `${topbar(`${esc(chapter().name)} · Level ${S.level + 1}`, 'levels')}
+    return `${topbar(`${esc(chapter().name)} · ${esc(level().name)}`, 'levels')}
     <main class="screen play">
       <div class="roundbar" aria-label="Round ${Math.min(S.round + 1, ROUNDS)} of ${ROUNDS}, ${score} correct">
         <span class="pips">${pips}</span>
@@ -182,8 +210,9 @@ const SCREENS = {
     }).join('');
     const nxt = nextLevel(S.chapterId, S.level);
     const canNext = !!nxt;
-    return `${topbar(`Level ${S.level + 1}`, 'levels')}
+    return `${topbar(esc(level().name), 'levels')}
     <main class="screen results">
+      <p class="keyline">${esc(keyLabel())}</p>
       <div class="scorecard ${passed ? 'pass' : 'fail'}">
         <p class="big"><b>${score}</b>/${ROUNDS}</p>
         <p class="verdict">${score === ROUNDS ? 'Perfect.' : passed ? 'Well done.' : 'Keep practising.'}</p>
@@ -236,14 +265,15 @@ function go(screen) {
   window.scrollTo(0, 0);
 }
 
-function levelMidis() {
-  return degrees().map((d) => midiOf(chapter().notes[d]));
-}
+const levelMidis = () => (S.ctx ? degrees().map(midiOfNote) : []);
+const cadenceMidis = () => (S.ctx ? S.ctx.cadence.chords.flat() : []);
 
-function openLevel(level) {
-  S.level = level;
+function openLevel(index) {
+  S.level = index;
+  const { keyPc, mode } = pickKey(level(), S.keyPc);
+  S.ctx = buildContext(S.chapterId, level(), keyPc, mode);
   go('explore');
-  if (ensureAudio()) prerender([...levelMidis(), ...CHORDS.C, ...CHORDS.F, ...CHORDS.G]);
+  if (ensureAudio()) prerender([...levelMidis(), ...cadenceMidis()]);
 }
 
 function startLevel() {
@@ -261,16 +291,15 @@ function startRound() {
   S.states = {};
   render();
   if (!ensureAudio()) return;
-  const doMidi = midiOf(chapter().notes[0]);
-  S.noteAt = playReference(S.settings.ref, doMidi);
-  playNote(midiOf(chapter().notes[S.deck[S.round]]), S.noteAt);
+  S.noteAt = playReference(S.settings.ref, S.ctx.tonic, S.ctx.cadence.chords);
+  playNote(midiOfNote(S.deck[S.round]), S.noteAt);
 }
 
 function replay() {
   if (!ensureAudio()) return;
   stopAll();
   const d = S.deck[S.round];
-  playNote(midiOf(chapter().notes[d]), now() + 0.03);
+  playNote(midiOfNote(d), now() + 0.03);
 }
 
 /**
@@ -287,13 +316,17 @@ function answer(d, fromMic = false) {
   }
   S.tries++;
   stopAll();
-  if (!fromMic) playNote(midiOf(chapter().notes[d]), now() + 0.03);
+  if (!fromMic) playNote(midiOfNote(d), now() + 0.03);
   if (ok) {
     S.phase = 'feedback';
     S.states = { ...S.states, [d]: 'correct' };
     appendLog([{
-      t: Date.now(), ch: S.chapterId, lvl: S.level, heard, answered: S.answers[S.answers.length - 1].answered,
+      t: Date.now(), ch: S.chapterId, lvl: S.level,
+      heard: degreeIndex(heard, S.ctx.mode), answered: degreeIndex(S.answers[S.answers.length - 1].answered, S.ctx.mode),
       tries: S.tries, ref: S.settings.ref, labels: S.settings.labels,
+      // Added with keys and modes: the level id, the key's tonic (0 = C), the mode, and the exact notes
+      // as semitones above the tonic (heard/answered store chromatic and higher-octave notes as 8 + that).
+      lid: level().id, key: S.ctx.keyPc, mode: S.ctx.mode, hs: heard, as: S.answers[S.answers.length - 1].answered,
     }]);
     timer = setTimeout(advance, CORRECT_DELAY);
   } else {
@@ -317,22 +350,21 @@ function advance() {
   stopAll();
   render();
   if (S.result.passed) {
-    const n = chapter().notes;
-    playArpeggio([n[0], n[2], n[4], n[7]].map(midiOf));
+    playArpeggio([0, S.ctx.mode === 'minor' ? 3 : 4, 7, 12].map(midiOfNote));
   }
 }
 
 function playReferenceOnly() {
   if (!ensureAudio()) return;
   stopAll();
-  playReference(S.settings.ref === 'do' ? 'do' : 'cadence', midiOf(chapter().notes[0]));
+  playReference(S.settings.ref === 'do' ? 'do' : 'cadence', S.ctx.tonic, S.ctx.cadence.chords);
 }
 
 function tapDot(d) {
   if (S.screen === 'explore') {
     if (!ensureAudio()) return;
     stopAll();
-    playNote(midiOf(chapter().notes[d]), now() + 0.02);
+    playNote(midiOfNote(d), now() + 0.02);
     S.states = { [d]: 'playing' };
     render();
     clearTimer();
@@ -386,8 +418,8 @@ function showHearing(info) {
 
 function onMicNote(midi) {
   const degreeMidis = [];
-  for (const d of degrees()) degreeMidis[d] = midiOf(chapter().notes[d]);
-  const { degree } = matchDegree(midi, degreeMidis);
+  for (const d of degrees()) degreeMidis[d] = midiOfNote(d);
+  const { degree } = matchDegree(midi, degreeMidis, { exact: S.ctx.multiOctave });
   if (degree == null) return; // not a note of this level
   if (S.screen === 'explore') {
     S.states = { [degree]: 'playing' };
@@ -407,6 +439,7 @@ const ACTIONS = {
   levels: () => go('levels'),
   chapter: (arg) => { S.chapterId = arg; go('levels'); },
   level: (arg) => openLevel(Number(arg)),
+  key: (arg) => { S.keyPc = Number(arg); saveKey(S.keyPc); render(); },
   start: () => startLevel(),
   reference: () => playReferenceOnly(),
   mic: () => {
@@ -428,7 +461,7 @@ const ACTIONS = {
     saveSettings(S.settings);
     if (key === 'sound') {
       setSound(value);
-      if (ensureAudio()) prerender([...levelMidis(), ...CHORDS.C, ...CHORDS.F, ...CHORDS.G]);
+      if (ensureAudio()) prerender([...levelMidis(), ...cadenceMidis()]);
     }
     render();
   },
@@ -458,7 +491,8 @@ function onKey(e) {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const n = Number(e.key);
   if (n >= 1 && n <= 8 && (S.screen === 'play' || S.screen === 'explore')) {
-    if (degrees().includes(n - 1)) { ensureAudio(); tapDot(n - 1); e.preventDefault(); }
+    const d = degrees()[n - 1]; // keys 1–8 are the first eight notes of the level
+    if (d != null) { ensureAudio(); tapDot(d); e.preventDefault(); }
     return;
   }
   if (e.key === ' ' || e.key === 'Enter') {

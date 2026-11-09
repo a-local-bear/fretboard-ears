@@ -156,25 +156,25 @@ function strum(notes, when, gain = 0.3) {
 }
 
 /**
- * Play the reference for `mode` ('cadence' | 'do' | 'none') starting now.
+ * Play the reference for `mode` ('cadence' | 'do' | 'none') starting now; `chords` are the cadence voicings (MIDI arrays).
  * Returns the context time at which the mystery note should start.
  * Reference voices fade as the mystery note begins so it stands alone.
  */
-export function playReference(mode, doMidi) {
+export function playReference(mode, doMidi, chords = CADENCE.map((n) => CHORDS[n])) {
   const t0 = now() + 0.05;
   let refVoices = [];
   let noteAt = t0;
   if (mode === 'cadence') {
     let prev = [];
-    CADENCE.forEach((name, i) => {
+    chords.forEach((notes, i) => {
       const at = t0 + i * CHORD_GAP;
       // Damp the previous chord as the next one is strummed, like a guitarist's hand would,
       // so its notes don't ring against the new chord.
       for (const v of prev) if (v) fadeVoice(v, at - CHORD_DAMP, CHORD_DAMP + 0.03);
-      prev = strum(CHORDS[name], at);
+      prev = strum(notes, at);
     });
     refVoices = prev;
-    noteAt = t0 + (CADENCE.length - 1) * CHORD_GAP + CADENCE_TO_NOTE;
+    noteAt = t0 + (chords.length - 1) * CHORD_GAP + CADENCE_TO_NOTE;
   } else if (mode === 'do') {
     refVoices.push(playNote(doMidi, t0));
     noteAt = t0 + DO_TO_NOTE;
