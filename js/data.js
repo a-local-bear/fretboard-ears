@@ -11,8 +11,8 @@ export const STRING_NAMES = ['E', 'A', 'D', 'G', 'B', 'e'];
 
 export const SOLFEGE = ['Do', 'Re', 'Mi', 'Fa', 'Sol', 'La', 'Si', "Do'"];
 export const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B', "C'"];
-/** Colour per scale degree (Do red … Si purple, Do' red). */
-export const DEGREE_COLORS = ['#d9473b', '#ec8a32', '#e9c63c', '#5cb85c', '#34a89c', '#4a84d4', '#9461c9', '#d9473b'];
+/** Colour per scale degree (Do red … Si purple, Do' shares Do's red), bright enough for text on black. */
+export const DEGREE_COLORS = ['#ff5f57', '#ff9a3d', '#ffd93a', '#2ee6a6', '#35c9ff', '#7b8dff', '#c47dff', '#ff5f57'];
 
 /**
  * Chapters. `notes` are the C major notes Do → Do' as [string, fret] (the reference placement);
