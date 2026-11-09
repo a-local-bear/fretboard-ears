@@ -8,13 +8,15 @@ import struct
 import zlib
 from pathlib import Path
 
-BG = (0x14, 0x11, 0x0D)
-WOOD = (0x3A, 0x22, 0x17)
-WIRE = (0xB8, 0xAE, 0x9F)
-STRING = (0xD9, 0xCC, 0xB4)
-DOTS = [((0.26, 0.62), (0xD9, 0x47, 0x3B)),   # Do
-        ((0.50, 0.50), (0xE9, 0xC6, 0x3C)),   # Mi
-        ((0.74, 0.38), (0x34, 0xA8, 0x9C))]   # Sol
+BG = (0x00, 0x00, 0x00)
+FRET = (0x3D, 0x3D, 0x3D)
+STRING = (0x8A, 0x8A, 0x8A)
+ACCENT = (0xC8, 0xFF, 0x2E)
+DOTS = [((0.26, 0.62), (0xFF, 0x5F, 0x57)),   # Do
+        ((0.50, 0.50), (0xFF, 0xD9, 0x3A)),   # Mi
+        ((0.74, 0.38), (0x35, 0xC9, 0xFF))]   # Sol
+DOT_R = 0.085
+RING_W = 0.024
 
 
 def sd_round_rect(px, py, x0, y0, x1, y1, r):
@@ -39,13 +41,15 @@ def shapes(rounded_bg, scale):
         out.append((lambda x, y: sd_round_rect(x, y, 0, 0, 1, 1, 0.22), BG))
     else:
         out.append((lambda x, y: -1.0, BG))
-    out.append((lambda x, y: sd_round_rect(x, y, s(0.12), s(0.28), s(0.88), s(0.72), 0.04 * scale), WOOD))
+    # Line drawing on black: a lime nut, hairline frets and strings, dots as black discs with a coloured ring.
+    out.append((lambda x, y: sd_round_rect(x, y, s(0.12) - 0.012 * scale, s(0.30), s(0.12), s(0.70), 0.0), ACCENT))
     for fx in (0.38, 0.62):
-        out.append((lambda x, y, fx=fx: sd_round_rect(x, y, s(fx) - 0.007 * scale, s(0.28), s(fx) + 0.007 * scale, s(0.72), 0.0), WIRE))
+        out.append((lambda x, y, fx=fx: sd_round_rect(x, y, s(fx) - 0.005 * scale, s(0.30), s(fx) + 0.005 * scale, s(0.70), 0.0), FRET))
     for sy in (0.38, 0.50, 0.62):
-        out.append((lambda x, y, sy=sy: sd_round_rect(x, y, s(0.12), s(sy) - 0.0045 * scale, s(0.88), s(sy) + 0.0045 * scale, 0.0), STRING))
+        out.append((lambda x, y, sy=sy: sd_round_rect(x, y, s(0.12), s(sy) - 0.006 * scale, s(0.88), s(sy) + 0.006 * scale, 0.0), STRING))
     for (cx, cy), col in DOTS:
-        out.append((lambda x, y, cx=cx, cy=cy: sd_circle(x, y, s(cx), s(cy), 0.075 * scale), col))
+        out.append((lambda x, y, cx=cx, cy=cy: sd_circle(x, y, s(cx), s(cy), DOT_R * scale), BG))
+        out.append((lambda x, y, cx=cx, cy=cy: abs(sd_circle(x, y, s(cx), s(cy), (DOT_R - RING_W / 2) * scale)) - RING_W / 2 * scale, col))
     return out
 
 
