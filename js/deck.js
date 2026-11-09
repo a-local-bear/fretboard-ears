@@ -24,15 +24,15 @@ export const hasTripleRun = (deck) =>
   deck.some((v, i) => i >= 2 && v === deck[i - 1] && v === deck[i - 2]);
 
 /**
- * Build a deck of `rounds` note ids from `degrees` (ascending; the last is the newest).
+ * Build a deck of `rounds` note ids from `degrees` (ascending). `newest` is the note just added
+ * (default: the last).
  * Small pools: newest appears 3x, every other note at least once, the rest random.
  * Pools too big for that (more than rounds - 2 notes): a random pick through the whole pool, no note
  * repeated before all have been used. Either way no note comes 3x in a row.
  */
-export function buildDeck(degrees, rounds = 10, rng = Math.random) {
+export function buildDeck(degrees, rounds = 10, rng = Math.random, newest = degrees[degrees.length - 1]) {
   if (degrees.length > rounds - 2) return bigDeck(degrees, rounds, rng);
-  const newest = degrees[degrees.length - 1];
-  const others = degrees.slice(0, -1);
+  const others = degrees.filter((d) => d !== newest);
   const deck = [newest, newest, newest, ...others];
   while (deck.length < rounds) deck.push(others[Math.floor(rng() * others.length)] ?? newest);
   deck.length = rounds;

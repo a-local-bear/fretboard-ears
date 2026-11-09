@@ -23,9 +23,9 @@ export const STAGES = [
     desc: 'Do to Fa on one string, then use them over a two-chord loop.',
     about: 'Everything in this method is heard relative to Do, the home note of the key. Before each note the app plays a cadence, a short chord sequence that tells your ear where home is, so you learn what each note feels like in a key rather than its absolute pitch. We start with four notes on a single string, so the fretboard never gets in the way of the ear.',
     steps: [
-      L('one-0', 'Do and Re only. Do sounds finished, Re sounds like it is waiting to move. Decide by feel before you think about pitch.'),
-      L('one-1', 'Mi joins. It is stable like Do, but brighter: the top of the major chord rather than its foundation.'),
-      L('one-2', 'Fa is the first note that really pulls: it leans down onto Mi, a half step below. Listen for that lean.'),
+      L('one-t0', 'Do and Sol only. Do is home; Sol, the fifth, is open and solid, a second place the ear could rest. Decide by feel before you think about pitch.'),
+      L('one-t1', 'Mi joins between them. It is bright and sweet, the third that completes the Do chord. Do, Mi and Sol together are the tonic triad.'),
+      L('one-t2', 'Re is the first restless note: it sits between Do and Mi and wants to fall down to Do. Listen for that lean towards home.'),
       G({
         id: 'g-first', title: 'Do, Re, Mi, Fa over a loop',
         intro: [

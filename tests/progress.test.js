@@ -47,23 +47,32 @@ test('playedCount counts levels with any score, including 0', () => {
 
 test('original progress keys still point at the original levels', () => {
   for (const c of CHAPTERS.slice(0, 4)) {
-    for (let l = 0; l < 7; l++) assert.equal(levelKey(c.id, l), `${c.id}-${l}`);
+    ['t0', 't1', 't2', 3, 4, 5, 6].forEach((x, l) => assert.equal(levelKey(c.id, l), `${c.id}-${x}`));
   }
   // Scores saved by the version with seven levels per chapter are read back untouched.
   const saved = { best: { 'one-0': 10, 'one-6': 8, 'pC-3': 5 } };
   const p = normalizeProgress(JSON.parse(JSON.stringify(saved)));
-  assert.deepEqual(p, saved);
+  assert.deepEqual(p.best, { 'one-6': 8, 'pC-3': 5 }, 'the old one-0 is gone, the rest untouched');
   assert.equal(bestScore(p, 'one', 6), 8);
   assert.equal(bestScore(p, 'pC', 3), 5);
-  assert.equal(playedCount(p, 'one'), 2);
+  assert.equal(playedCount(p, 'one'), 1);
   // New levels add keys next to them.
   const r = recordScore(p, 'one', 7, 9);
   assert.equal(r.progress.best['one-major-2nd'], 9);
-  assert.equal(r.progress.best['one-0'], 10);
+  assert.equal(r.progress.best['one-6'], 8);
 });
 
 test('normalizeProgress drops invalid scores but keeps unknown level ids', () => {
   assert.deepEqual(normalizeProgress(null), emptyProgress());
   assert.deepEqual(normalizeProgress('x'), emptyProgress());
   assert.deepEqual(normalizeProgress({ best: { a: 11, b: -1, c: 1.5, d: 'x', 'neck-rk-all': 7 } }), { best: { 'neck-rk-all': 7 } });
+});
+
+test('migration drops the old build-up scores and carries a passed Do–Sol to the new levels', () => {
+  const p = normalizeProgress({ best: { 'one-0': 10, 'one-1': 9, 'one-2': 3, 'one-3': 8, 'pA-0': 9, 'pA-1': 4, 'pA-3': 7, 'pB-3': 10, 'pB-2': 1, 'one-4': 6 } });
+  assert.deepEqual(p.best, {
+    'one-3': 8, 'one-t0': 8, 'one-t1': 8, 'one-t2': 8, 'one-4': 6,
+    'pA-3': 7, 'pB-3': 10, 'pB-t0': 10, 'pB-t1': 10, 'pB-t2': 10,
+  });
+  assert.deepEqual(normalizeProgress(p), p, 'idempotent');
 });

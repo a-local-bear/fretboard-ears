@@ -226,13 +226,27 @@ const RANGES = [
 ];
 
 const LENGTH_NAMES = ['Two', 'Three', 'Four', 'Five'];
-const MAJOR_8 = [0, 2, 4, 5, 7, 9, 11, 12];
+
+/**
+ * The seven build-up levels of a pattern chapter, triad first: Do·Sol, Do·Mi·Sol, Do·Re·Mi·Sol, then
+ * the scale grows upwards. `notes` (explicit offsets) replaces the from/to span; `newest` is the
+ * offset of the note just added. Levels 3-6 keep the ids `<chapter>-<n>`, 0-2 are `<chapter>-t<n>`.
+ */
+const BUILD_UP = [
+  { id: 't0', notes: [0, 7], newest: 7, name: 'Do · Sol' },
+  { id: 't1', notes: [0, 4, 7], newest: 4, name: 'Do · Mi · Sol', tag: 'The triad' },
+  { id: 't2', notes: [0, 2, 4, 7], newest: 2, name: 'Do · Re · Mi · Sol' },
+  { from: 0, to: 7, newest: 5, name: 'Do – Sol', tag: 'First half' },
+  { from: 0, to: 9, newest: 9, name: 'Do – La' },
+  { from: 0, to: 11, newest: 11, name: 'Do – Si' },
+  { from: 0, to: 12, newest: 12, name: "Do – Do'", tag: 'Whole octave' },
+];
 
 /**
  * Level spec: { id, idx, chapterId, family, name, tag, title, mode ('major'|'minor'|null), random
  * (null | 'major' | 'minor' | 'any': key, and for 'any' the mode, are drawn on every attempt),
- * chromatic, from, to, grow?, len? (notes per round, pairs and dictation families only; absent = 1) }. The first seven levels of every pattern chapter are the original
- * build-up levels and keep their ids `<chapter>-<0..6>`, so saved scores carry over.
+ * chromatic, from, to (or an explicit `notes` list of offsets), grow? + newest? (build-up levels: the offset just added), len? (notes per round, pairs and dictation families only; absent = 1) }. The first seven levels of every pattern chapter are the
+ * build-up levels (see BUILD_UP).
  */
 function levelsOf(chapter) {
   const out = [];
@@ -246,11 +260,7 @@ function levelsOf(chapter) {
   for (const family of ['major', 'majorChrom', 'minor', 'minorChrom']) {
     if (family === 'major' && !neck) {
       for (let l = 0; l < LEVELS_PER_CHAPTER; l++) {
-        add('major', {
-          id: `${ch}-${l}`, grow: l, from: 0, to: MAJOR_8[l + 1],
-          name: l === 0 ? 'Do · Re' : `Do – ${SOLFEGE[l + 1]}`,
-          tag: l === 2 ? 'First half' : l === 6 ? 'Whole octave' : '',
-        });
+        add('major', { ...BUILD_UP[l], id: BUILD_UP[l].id ? `${ch}-${BUILD_UP[l].id}` : `${ch}-${l}`, grow: l });
       }
       add('major', { id: `${ch}-major-2nd`, from: 6, to: 12, name: 'Second half' });
     } else {
@@ -285,6 +295,9 @@ export function levelsFor(chapterId) {
   return LEVEL_CACHE.get(chapterId);
 }
 
+/** The note a growing level just added (its `newest`), else the top of the pool. */
+export const newestOf = (level, pool) => (pool.includes(level.newest) ? level.newest : pool[pool.length - 1]);
+
 /** Pick the key (and mode) for an attempt: fixed levels use `keyPc`, random ones draw. */
 export function pickKey(level, keyPc, rng = Math.random) {
   if (!level.random) return { keyPc, mode: level.mode };
@@ -304,8 +317,10 @@ export function buildContext(chapterId, level, keyPc, mode) {
   const positions = new Map();
   const pool = [];
   const maxOffset = MAX_MIDI - place.tonic;
-  for (let o = level.from; o <= Math.min(level.to, maxOffset); o++) {
-    if (!level.chromatic && !SCALES[mode].includes(mod12(o))) continue;
+  const offsets = level.notes ?? Array.from({ length: Math.max(0, Math.min(level.to, maxOffset) - level.from + 1) }, (_, i) => level.from + i);
+  for (const o of offsets) {
+    if (o > maxOffset) continue;
+    if (!level.notes && !level.chromatic && !SCALES[mode].includes(mod12(o))) continue;
     const pos = positionsOf(place, place.tonic + o);
     if (!pos.length) continue;
     pool.push(o);
