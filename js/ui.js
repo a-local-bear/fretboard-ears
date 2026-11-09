@@ -5,6 +5,7 @@ import {
   chapterById, levelsFor, buildContext, pickKey, placeChapter, positionsOf, resolutionOf,
 } from './data.js';
 import { buildDeck } from './deck.js';
+import { buildSequenceDeck } from './phrase.js';
 import {
   isPassed, bestScore, recordScore, nextLevel, playedCount,
 } from './progress.js';
@@ -25,6 +26,7 @@ import { matchDegree, SHARP_NAMES } from './pitch.js';
 import { referenceFor } from './reference.js';
 
 const CORRECT_DELAY = 1100;
+const PHRASE_STEP = 0.6; // seconds between the notes of a phrase
 const RESOLVE_STEP = 0.75; // seconds per quarter note of the resolution (80 bpm)
 const MIC_NOTE_LIMIT = 1.6; // seconds the app's notes may ring while the mic listens
 const VERTICAL_BELOW = 640;
@@ -37,7 +39,9 @@ const S = {
   ctx: null, // buildContext() of the level being explored or played: key, mode, pool, positions
   deck: [],
   round: 0,
-  answers: [], // { heard, answered }
+  answers: [], // one per round: { len, notes: [{ heard, answered }] }, the FIRST answer to each position
+  pos: 0, // index in the phrase of the note being answered (always 0 for single-note levels)
+  fresh: false, // the dots of the previous position are still lit; clear them on the next answer
   phase: 'listen', // listen → (retry after a miss) → feedback once the right note is found
   tries: 0, // taps in the current round
   states: {}, // degree → dot state for the current round
@@ -69,6 +73,11 @@ const noteText = (d) => (S.settings.labels === 'letters' ? letterName(d, S.ctx.k
 /** Every note name the UI shows goes through here so it always carries its colour (.deg, --c). */
 const coloredName = (d, text = noteText(d)) => `<span class="deg" style="--c:${noteColor(d)}">${esc(text)}</span>`;
 const noteName = (d) => coloredName(d);
+/** The note ids to find this round: a phrase (an array), or a single note as a one-element array. */
+const targets = () => [].concat(S.deck[S.round]);
+/** A round is right only if every note was right on the first try. */
+const roundOk = (a) => a.notes.length === a.len && a.notes.every((n) => n.heard === n.answered);
+const roundBad = (a) => a.notes.some((n) => n.heard !== n.answered);
 const keyLabel = () => keyName(S.ctx.keyPc, S.ctx.mode);
 const clearTimer = () => {
   clearTimeout(timer); timer = null;
@@ -178,11 +187,12 @@ const SCREENS = {
     const intro = level().grow != null
       ? `New note: <b>${coloredName(newest, solfegeName(newest))}</b>${S.settings.labels === 'letters' ? ` (${coloredName(newest, letterName(newest, S.ctx.keyPc, S.ctx.mode))})` : ''}.`
       : `${ds.length} notes, ${ds.length > 8 ? 'from ' : ''}<b>${noteName(ds[0])}</b> to <b>${noteName(newest)}</b>.`;
+    const phrase = level().len > 1 ? `Each round plays ${level().len} notes in a row: play them back one by one, in order.` : '';
     const where = S.ctx.positions.get(newest).length > 1 ? 'Every position of a note counts as that note.' : '';
     return `${topbar(esc(level().name), 'levels', esc(chapter().name))}
     <main class="screen explore">
       <p class="keyline">${esc(keyLabel())}</p>
-      <p class="lede">${intro} ${where} ${S.mic === 'on' ? 'Tap the dots to hear each one, or play them to check the mic hears you' : 'Tap the dots to hear each one'}, then start.</p>
+      <p class="lede">${intro} ${where} ${phrase} ${S.mic === 'on' ? 'Tap the dots to hear each one, or play them to check the mic hears you' : 'Tap the dots to hear each one'}, then start.</p>
       ${micBar()}
       <div class="boardwrap">${board({ states: S.states })}</div>
       <div class="actions">
@@ -193,18 +203,26 @@ const SCREENS = {
   },
 
   play() {
-    const score = S.answers.filter((a) => a.heard === a.answered).length;
+    const score = S.answers.filter(roundOk).length;
     const pips = Array.from({ length: ROUNDS }, (_, i) => {
       const a = S.answers[i];
-      const cls = a ? (a.heard === a.answered ? 'ok' : 'bad') : i === S.round ? 'now' : '';
+      const cls = a ? (roundOk(a) ? 'ok' : roundBad(a) ? 'bad' : 'now') : i === S.round ? 'now' : '';
       return `<i class="${cls}"></i>`;
     }).join('');
+    const seq = targets();
+    const cur = S.answers[S.round];
+    const notePips = seq.length < 2 ? '' : `<div class="pips notepips" aria-label="Note ${S.pos + 1} of ${seq.length}">${seq.map((_, i) => {
+      const n = cur?.notes[i];
+      const cls = n ? (n.heard === n.answered ? 'ok' : 'bad') : i === S.pos && S.phase !== 'feedback' ? 'now' : '';
+      return `<i class="${cls}"></i>`;
+    }).join('')}</div>`;
     return `${topbar(esc(level().name), 'levels', esc(chapter().name))}
     <main class="screen play">
       <div class="roundbar" aria-label="Round ${Math.min(S.round + 1, ROUNDS)} of ${ROUNDS}, ${score} correct">
         <span class="pips">${pips}</span>
         <span class="count">${Math.min(S.round + 1, ROUNDS)}/${ROUNDS}</span>
       </div>
+      ${notePips}
       <p class="prompt">${promptText()}</p>
       ${micBar()}
       <div class="boardwrap">${board({ states: S.states, posStates: S.posStates, disabled: S.phase === 'feedback' })}</div>
@@ -218,9 +236,9 @@ const SCREENS = {
   results() {
     const { score, newBest, passed } = S.result;
     const counts = new Map();
-    for (const a of S.answers) {
-      if (a.heard === a.answered) continue;
-      const k = `${a.heard}>${a.answered}`;
+    for (const n of S.answers.flatMap((a) => a.notes)) {
+      if (n.heard === n.answered) continue;
+      const k = `${n.heard}>${n.answered}`;
       counts.set(k, (counts.get(k) || 0) + 1);
     }
     const confusions = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => {
@@ -335,12 +353,23 @@ const SCREENS = {
 };
 
 function promptText() {
-  const a = S.answers[S.answers.length - 1];
-  if (S.phase === 'retry') return 'Not that one. Keep looking.';
-  if (S.phase !== 'feedback' || !a) return S.mic === 'on' ? 'Which note was that? Play it or tap it.' : 'Which note was that?';
-  const lead = a.heard === a.answered ? 'Yes, ' : 'There it is: ';
+  const seq = targets();
+  const a = S.answers[S.round];
+  // The notes of the phrase found so far, as coloured names.
+  const found = seq.slice(0, S.pos).map(noteName).join(' → ');
+  const so = found ? `${found} → ` : '';
+  if (S.phase === 'retry') return `${so}Not that one. Keep looking.`;
+  if (S.phase !== 'feedback' || !a) {
+    if (seq.length > 1) return `${so}Which is note ${S.pos + 1} of ${seq.length}?`;
+    return S.mic === 'on' ? 'Which note was that? Play it or tap it.' : 'Which note was that?';
+  }
+  const lead = roundOk(a) ? 'Yes, ' : 'There it is: ';
+  if (seq.length > 1) {
+    const rest = S.resolution.length > 1 ? ` → ${S.resolution.slice(1).map(noteName).join(' → ')}` : '.';
+    return `${lead}${seq.map(noteName).join(' → ')}${rest}`;
+  }
   if (S.resolution.length > 1) return `${lead}${S.resolution.map(noteName).join(' → ')}`;
-  return `${lead}${noteName(a.heard)}.`;
+  return `${lead}${noteName(seq[0])}.`;
 }
 
 // ---------- flow ----------
@@ -369,7 +398,7 @@ function openLevel(index) {
 }
 
 function startLevel() {
-  S.deck = buildDeck(degrees(), ROUNDS);
+  S.deck = level().len > 1 ? buildSequenceDeck(level(), degrees(), ROUNDS, S.ctx.mode) : buildDeck(degrees(), ROUNDS);
   S.round = 0;
   S.answers = [];
   S.screen = 'play';
@@ -380,6 +409,8 @@ function startRound() {
   clearTimer();
   stopAll();
   S.phase = 'listen';
+  S.pos = 0;
+  S.fresh = false;
   S.states = {};
   S.posStates = {};
   S.resolution = [];
@@ -387,27 +418,37 @@ function startRound() {
   S.noteAt = 0;
   render();
   if (!ensureAudio()) return;
-  S.noteAt = playReference(referenceFor(S.settings, S.round), S.ctx.tonic, S.ctx.cadence.chords);
-  playNote(midiOfNote(S.deck[S.round]), S.noteAt);
+  // Response time counts from the last note of the phrase sounding.
+  S.noteAt = playPhrase(playReference(referenceFor(S.settings, S.round), S.ctx.tonic, S.ctx.cadence.chords));
+}
+
+/** Play the round's whole phrase from time `at`; returns when its last note sounds. */
+function playPhrase(at) {
+  const seq = targets();
+  seq.forEach((d, i) => playNote(midiOfNote(d), at + i * PHRASE_STEP));
+  return at + (seq.length - 1) * PHRASE_STEP;
 }
 
 function replay() {
   if (!ensureAudio()) return;
   stopAll();
-  const d = S.deck[S.round];
-  playNote(midiOfNote(d), now() + 0.03);
+  playPhrase(now() + 0.03);
 }
 
 /**
- * Only the first tap of a round counts. After a miss the player keeps tapping (each wrong dot
- * turns red and plays its note) until they find the right one; then the round moves on.
+ * Only the first tap on each note of the phrase counts. After a miss the player keeps tapping (each
+ * wrong dot turns red and plays its note) until they find the right one; then the next note of the
+ * phrase is up, or the round moves on after the last. One log entry is written per note.
  */
 function answer(d, fromMic = false, pos = null) {
   if (S.phase !== 'listen' && S.phase !== 'retry') return;
-  const heard = S.deck[S.round];
+  const seq = targets();
+  const p = S.pos;
+  const heard = seq[p];
   const ok = d === heard;
+  if (S.fresh) { S.states = {}; S.fresh = false; }
   if (S.phase === 'listen') {
-    S.answers.push({ heard, answered: d });
+    (S.answers[S.round] ||= { len: seq.length, notes: [] }).notes.push({ heard, answered: d });
     S.tries = 0;
     S.noteMs = S.noteAt ? Math.max(0, Math.round((now() - S.noteAt) * 1000)) : null;
   }
@@ -416,18 +457,31 @@ function answer(d, fromMic = false, pos = null) {
   stopAll();
   if (!fromMic) playNote(midiOfNote(d), now() + 0.03);
   if (ok) {
-    S.phase = 'feedback';
+    const first = S.answers[S.round].notes[p].answered;
     S.states = { ...S.states, [d]: 'correct' };
     appendLog([{
       t: Date.now(), ch: S.chapterId, lvl: S.level,
-      heard: degreeIndex(heard, S.ctx.mode), answered: degreeIndex(S.answers[S.answers.length - 1].answered, S.ctx.mode),
+      heard: degreeIndex(heard, S.ctx.mode), answered: degreeIndex(first, S.ctx.mode),
       tries: S.tries, ms: S.noteMs, ref: referenceFor(S.settings, S.round), labels: S.settings.labels,
       // Added with keys and modes: the level id, the key's tonic (0 = C), the mode, and the exact notes
       // as semitones above the tonic (heard/answered store chromatic and higher-octave notes as 8 + that).
-      lid: level().id, key: S.ctx.keyPc, mode: S.ctx.mode, hs: heard, as: S.answers[S.answers.length - 1].answered,
+      lid: level().id, key: S.ctx.keyPc, mode: S.ctx.mode, hs: heard, as: first,
+      // Added with sequence levels: the note's index in the phrase and the phrase length (0 and 1 for single notes).
+      seq: p, len: seq.length,
     }]);
-    const wait = S.settings.resolve === 'on' ? playResolution(d, fromMic, pos) : 0;
-    timer = setTimeout(advance, CORRECT_DELAY + wait);
+    if (p < seq.length - 1) {
+      // Next note of the phrase; its dots start clean and its response time from now.
+      S.pos++;
+      S.phase = 'listen';
+      S.fresh = true;
+      S.noteAt = now();
+      S.noteMs = null;
+    } else {
+      // Only the last note of a phrase resolves to Do.
+      S.phase = 'feedback';
+      const wait = S.settings.resolve === 'on' ? playResolution(d, fromMic, pos) : 0;
+      timer = setTimeout(advance, CORRECT_DELAY + wait);
+    }
   } else {
     S.phase = 'retry';
     S.states = { ...S.states, [d]: 'wrong' };
@@ -472,7 +526,7 @@ function advance() {
   clearTimer();
   S.round++;
   if (S.round < ROUNDS) return startRound();
-  const score = S.answers.filter((a) => a.heard === a.answered).length;
+  const score = S.answers.filter(roundOk).length;
   const { progress, newBest } = recordScore(S.progress, S.chapterId, S.level, score);
   S.progress = progress;
   saveProgress(progress);

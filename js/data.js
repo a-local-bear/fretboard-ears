@@ -211,6 +211,8 @@ export const FAMILIES = {
   minor: { name: 'Minor scale', mode: 'minor', chromatic: false },
   minorChrom: { name: 'Minor with chromatic notes', mode: 'minor', chromatic: true },
   random: { name: 'Random key', mode: null, chromatic: false },
+  pairs: { name: 'Degree pairs', mode: 'major', chromatic: false },
+  dictation: { name: 'Dictation', mode: 'major', chromatic: false },
 };
 
 /** Note ranges as semitone spans above the tonic. `to: Infinity` runs to the top of the samples. */
@@ -222,12 +224,13 @@ const RANGES = [
   { id: 'all', name: 'Many octaves', from: 0, to: Infinity, neckOnly: true },
 ];
 
+const LENGTH_NAMES = ['Two', 'Three', 'Four', 'Five'];
 const MAJOR_8 = [0, 2, 4, 5, 7, 9, 11, 12];
 
 /**
  * Level spec: { id, idx, chapterId, family, name, tag, title, mode ('major'|'minor'|null), random
  * (null | 'major' | 'minor' | 'any': key, and for 'any' the mode, are drawn on every attempt),
- * chromatic, from, to, grow? }. The first seven levels of every pattern chapter are the original
+ * chromatic, from, to, grow?, len? (notes per round, pairs and dictation families only; absent = 1) }. The first seven levels of every pattern chapter are the original
  * build-up levels and keep their ids `<chapter>-<0..6>`, so saved scores carry over.
  */
 function levelsOf(chapter) {
@@ -256,6 +259,14 @@ function levelsOf(chapter) {
   add('random', { id: `${ch}-rk-major`, mode: 'major', random: 'major', from: 0, to: 12, name: 'Major, one octave' });
   add('random', { id: `${ch}-rk-minor`, mode: 'minor', random: 'minor', from: 0, to: 12, name: 'Minor, one octave' });
   if (neck) add('random', { id: `${ch}-rk-all`, mode: null, random: 'any', from: 0, to: Infinity, name: 'Major or minor, many octaves' });
+  // Sequence levels: `len` target notes per round, answered note by note (see phrase.js).
+  add('pairs', { id: `${ch}-pairs-1st`, len: 2, from: 0, to: 6, name: 'First half' });
+  add('pairs', { id: `${ch}-pairs-oct`, len: 2, from: 0, to: 12, name: 'Whole octave' });
+  add('pairs', { id: `${ch}-pairs-minor`, len: 2, from: 0, to: 12, mode: 'minor', name: 'Minor, whole octave' });
+  add('pairs', { id: `${ch}-pairs-rk`, len: 2, from: 0, to: 12, mode: 'major', random: 'major', name: 'Random key' });
+  LENGTH_NAMES.forEach((w, i) => add('dictation', { id: `${ch}-dict-${i + 2}`, len: i + 2, from: 0, to: 12, name: `${w} notes` }));
+  add('dictation', { id: `${ch}-dict-minor`, len: 4, from: 0, to: 12, mode: 'minor', name: 'Minor, four notes' });
+  add('dictation', { id: `${ch}-dict-rk`, len: 4, from: 0, to: 12, mode: 'major', random: 'major', name: 'Random key, four notes' });
   return out.map((l, idx) => ({ ...l, idx }));
 }
 

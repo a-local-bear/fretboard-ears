@@ -171,6 +171,8 @@ button { font: inherit; color: inherit; }
 .pips i.ok { background: var(--ok); }
 .pips i.bad { background: var(--bad); }
 .pips i.now { background: var(--accent); }
+.notepips { justify-content: center; margin-top: 10px; }
+.notepips i { width: 28px; height: 5px; }
 .count { color: var(--muted); }
 .prompt { margin: 0; text-align: center; font: 700 22px/1.3 var(--display); letter-spacing: -0.02em; min-height: 1.3em; text-wrap: balance; }
 
