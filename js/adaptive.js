@@ -117,16 +117,16 @@ function draw(keys, weight, rng) {
 }
 
 /**
- * A deck of single-note ids. With `keepNewest` (the level's newest note is the last of the pool) it
+ * A deck of single-note ids. With `keepNewest` (`newest`, default the last of the pool) it
  * appears at least twice. Notes are drawn in proportion to their weight, with a per-note cap so one
  * weak note cannot take the whole deck, and no note comes three times in a row.
  */
-export function buildAdaptiveDeck(pool, weights, rounds = 10, rng = Math.random, { keepNewest = false } = {}) {
+export function buildAdaptiveDeck(pool, weights, rounds = 10, rng = Math.random, { keepNewest = false, newest } = {}) {
   const w = (n) => weights.get(n) ?? NEUTRAL;
   const counts = new Map(pool.map((n) => [n, 0]));
   const deck = [];
   const add = (n) => { deck.push(n); counts.set(n, counts.get(n) + 1); };
-  if (keepNewest && pool.length) { const nw = pool[pool.length - 1]; add(nw); add(nw); }
+  if (keepNewest && pool.length) { const nw = pool.includes(newest) ? newest : pool[pool.length - 1]; add(nw); add(nw); }
   const cap = Math.max(Math.ceil(rounds * 0.4), Math.ceil(rounds / pool.length) + 1);
   while (deck.length < rounds) {
     let open = pool.filter((n) => counts.get(n) < cap);
@@ -182,5 +182,5 @@ export function buildAdaptivePhraseDeck(pool, len, weights, rounds = 10, { mode 
 export function buildAdaptiveDeckFor(level, pool, weights, rounds, mode, rng = Math.random) {
   if (level.family === 'pairs') return buildAdaptivePairDeck(pool, weights, rounds, rng);
   if (level.len > 1) return buildAdaptivePhraseDeck(pool, level.len, weights, rounds, { mode, rng });
-  return buildAdaptiveDeck(pool, weights, rounds, rng, { keepNewest: level.grow != null });
+  return buildAdaptiveDeck(pool, weights, rounds, rng, { keepNewest: level.grow != null, newest: level.newest });
 }

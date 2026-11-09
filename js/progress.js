@@ -1,5 +1,5 @@
 // Pure progress rules. progress = { best: { "<levelId>": 0..10 } }
-// Level ids come from data.js (levelsFor). The original build-up levels keep "<chapterId>-<0..6>".
+// Level ids come from data.js (levelsFor). The original build-up levels keep "<chapterId>-<3..6>", the first three are "<chapterId>-t0..t2".
 // Every level is open: this is a practice app, so there's no unlocking.
 
 import { CHAPTERS, ROUNDS, PASS_SCORE, levelsFor } from './data.js';
@@ -16,6 +16,12 @@ export function normalizeProgress(raw) {
   if (!raw || typeof raw !== 'object') return emptyProgress();
   const best = {};
   for (const [k, v] of Object.entries(raw.best || {})) if (Number.isInteger(v) && v >= 0 && v <= ROUNDS) best[k] = v;
+  // Build-up levels 0-2 became Do·Sol, Do·Mi·Sol, Do·Re·Mi·Sol (ids t0-t2): the old scores are for
+  // other note sets. A passed Do–Sol (id -3) carries over so the player is not sent back to the start.
+  for (const c of CHAPTERS.slice(0, 4)) {
+    for (let l = 0; l < 3; l++) delete best[`${c.id}-${l}`];
+    if (isPassed(best[`${c.id}-3`] ?? -1)) for (let l = 0; l < 3; l++) best[`${c.id}-t${l}`] = best[`${c.id}-3`];
+  }
   return { best };
 }
 

@@ -1,15 +1,15 @@
 // Daily practice session: a pure planner that turns progress + stats into four blocks of ten rounds.
 //
 // Rules (planSession):
-//  - A brand-new player (no stats, no scores) gets the first C-major levels: Do · Re, then Do – Mi,
-//    then Do – Fa, and a last adaptive block on Do – Mi.
+//  - A brand-new player (no stats, no scores) gets the first C-major levels: Do · Sol, then Do · Mi · Sol,
+//    then Do · Re · Mi · Sol, and a last adaptive block on Do · Mi · Sol.
 //  - Block 1, WARM-UP: the most-played fixed C-major single-note level (log entries per level id, ties go
 //    to the earlier level); with no log, the first major level not yet passed. Always in C major.
 //  - Block 2, WEAK NOTES: adaptive drilling on the narrowest played, non-chromatic fixed-key level that
 //    contains the player's two weakest notes (weakest first, falling back to the weakest one); if no note
 //    is weak enough, the "frontier" (first major level not yet passed).
 //  - Block 3, PAIRS / DICTATION: the first unpassed step of the ladder pairs-1st, pairs-oct, dictation 2…5
-//    (gated: pairs-1st needs a passed major level reaching Mi, the rest a passed whole-octave level), else
+//    (gated: pairs-1st needs a passed major level whose notes include Mi, the rest a passed whole-octave level), else
 //    the hardest dictation. When the gate is not met, the frontier level ("NEW NOTE") instead.
 //  - Block 4, RANDOM KEY: only if a whole-octave C-major level (family major, Do → Do') was passed: the
 //    first unpassed of random-key major/minor, else one of them by the rng. Otherwise another WEAK NOTES
@@ -100,7 +100,7 @@ export function planSession({ progress, stats, log = [] } = {}, { rng = Math.ran
   blocks.push(weakBlock(weak.slice(0, 2)));
 
   // Block 3: pairs / dictation at a fitting step of the ladder, in the warm-up's chapter.
-  const reachesMi = allLevels().some((l) => isCMajorSingle(l) && l.to >= 5 && passed(best, l.id));
+  const reachesMi = allLevels().some((l) => isCMajorSingle(l) && poolOf(l).has(4) && passed(best, l.id));
   const octave = allLevels().some((l) => wholeOctave(l) && passed(best, l.id));
   const ladder = [['pairs-1st', reachesMi], ['pairs-oct', octave], ['dict-2', octave], ['dict-3', octave], ['dict-4', octave], ['dict-5', octave]];
   const open = ladder.filter(([, ok]) => ok);

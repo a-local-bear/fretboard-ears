@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildDeck, mulberry32, hasTripleRun } from '../js/deck.js';
-import { CHAPTERS, levelsFor, buildContext, pickKey, ROUNDS } from '../js/data.js';
+import { CHAPTERS, levelsFor, buildContext, newestOf, pickKey, ROUNDS } from '../js/data.js';
 
 for (const chapter of CHAPTERS) {
   for (const level of levelsFor(chapter.id)) {
@@ -10,9 +10,9 @@ for (const chapter of CHAPTERS) {
       for (let keyPc = 0; keyPc < 12; keyPc++) {
         for (const mode of level.mode ? [level.mode] : ['major', 'minor']) {
           const degrees = buildContext(chapter.id, level, keyPc, mode).pool;
-          const newest = degrees[degrees.length - 1];
+          const newest = level.grow != null ? newestOf(level, degrees) : degrees[degrees.length - 1];
           for (let seed = 1; seed <= 25; seed++) {
-            const deck = buildDeck(degrees, ROUNDS, mulberry32(seed));
+            const deck = buildDeck(degrees, ROUNDS, mulberry32(seed), newest);
             assert.equal(deck.length, ROUNDS);
             assert.ok(deck.every((d) => degrees.includes(d)), 'only level notes');
             assert.ok(!hasTripleRun(deck), `no triple run: ${deck}`);
@@ -30,14 +30,14 @@ for (const chapter of CHAPTERS) {
 }
 
 test('newest note appears exactly 3x when other notes fill the rest', () => {
-  // Level 1 (Do, Re): 3 Re + 7 Do
+  // Two notes (Do, Re): 3 Re + 7 Do
   const deck = buildDeck([0, 2], ROUNDS, mulberry32(7));
   assert.equal(deck.filter((d) => d === 2).length, 3);
 });
 
-test('the original build-up levels draw from the same notes as before', () => {
+test('the build-up levels draw from the expected notes', () => {
   const pools = levelsFor('one').slice(0, 7).map((l) => buildContext('one', l, 0, 'major').pool);
-  assert.deepEqual(pools[0], [0, 2]);
+  assert.deepEqual(pools[0], [0, 7]);
   assert.deepEqual(pools[6], [0, 2, 4, 5, 7, 9, 11, 12]);
 });
 
@@ -51,4 +51,13 @@ test('random-key levels draw a key and mode', () => {
   }
   assert.deepEqual([...seen].sort(), ['major', 'minor']);
   assert.deepEqual(pickKey(levelsFor('one')[0], 5), { keyPc: 5, mode: 'major' });
+});
+
+test('the newest note can be any note of the pool', () => {
+  for (let seed = 1; seed <= 50; seed++) {
+    const deck = buildDeck([0, 2, 4, 7], ROUNDS, mulberry32(seed), 2);
+    assert.ok(deck.filter((d) => d === 2).length >= 3);
+    assert.ok([0, 4, 7].every((n) => deck.includes(n)));
+    assert.ok(!hasTripleRun(deck));
+  }
 });

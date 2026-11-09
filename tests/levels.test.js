@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CHAPTERS, CHORDS, CADENCE, OPEN, MAX_FRET, MIN_MIDI, MAX_MIDI, SCALES,
-  levelsFor, buildContext, placeChapter, cadenceFor, midiOf,
+  levelsFor, buildContext, newestOf, placeChapter, cadenceFor, midiOf,
   solfegeName, letterName, keyName, noteColor, degreeIndex, SEMI_NAMES, SEMI_COLORS,
 } from '../js/data.js';
 
@@ -14,7 +14,8 @@ test('level ids are unique and the original ones are kept', () => {
   assert.equal(new Set(all).size, all.length);
   for (const c of CHAPTERS.slice(0, 4)) {
     const ls = levelsFor(c.id);
-    for (let l = 0; l < 7; l++) assert.equal(ls[l].id, `${c.id}-${l}`);
+    const ids = ['t0', 't1', 't2', 3, 4, 5, 6];
+    ids.forEach((x, l) => assert.equal(ls[l].id, `${c.id}-${x}`));
     assert.equal(ls[0].idx, 0);
   }
 });
@@ -27,6 +28,32 @@ test('every pattern chapter has the same level families; the neck adds octave le
   }
   assert.ok(levelsFor('neck').some((l) => l.name === 'Many octaves'));
   assert.ok(!levelsFor('pA').some((l) => l.name === 'Many octaves'));
+});
+
+test('the build-up is triad first: Do·Sol, Do·Mi·Sol, Do·Re·Mi·Sol, then Fa, La, Si, Do\'', () => {
+  const pools = [[0, 7], [0, 4, 7], [0, 2, 4, 7], [0, 2, 4, 5, 7], [0, 2, 4, 5, 7, 9], [0, 2, 4, 5, 7, 9, 11], [0, 2, 4, 5, 7, 9, 11, 12]];
+  const newest = [7, 4, 2, 5, 9, 11, 12];
+  for (const c of CHAPTERS.slice(0, 4)) {
+    const ls = levelsFor(c.id);
+    pools.forEach((pool, l) => {
+      for (const keyPc of KEYS) {
+        const ctx = buildContext(c.id, ls[l], keyPc, 'major');
+        assert.deepEqual(ctx.pool, pool, `${ls[l].id} in ${keyPc}`);
+        for (const o of pool) assert.ok(ctx.positions.get(o).length >= 1);
+      }
+      assert.equal(ls[l].newest, newest[l]);
+      assert.equal(newestOf(ls[l], pool), newest[l]);
+      assert.equal(ls[l].grow, l);
+    });
+  }
+  assert.deepEqual(levelsFor('one').slice(0, 7).map((l) => l.name), ['Do · Sol', 'Do · Mi · Sol', 'Do · Re · Mi · Sol', 'Do – Sol', 'Do – La', 'Do – Si', "Do – Do'"]);
+});
+
+test('an explicit notes list is honoured, minor mode and gaps included', () => {
+  const ctx = buildContext('pA', { notes: [0, 3, 7], chromatic: false }, 9, 'minor');
+  assert.deepEqual(ctx.pool, [0, 3, 7]);
+  assert.ok([...ctx.positions.values()].every((p) => p.length === 1));
+  assert.deepEqual(buildContext('neck', { notes: [0, 12, 99], chromatic: false }, 0, 'major').pool, [0, 12]);
 });
 
 test('C major reproduces the original chapter notes exactly', () => {

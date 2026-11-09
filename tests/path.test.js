@@ -44,18 +44,18 @@ test('guides have deep text, valid examples and a valid backing loop', () => {
 
 test('the path starts at the first level and moves on as steps are done', () => {
   const p = emptyProgress();
-  assert.equal(nextStep(p, []).id, 'one-0');
-  p.best['one-0'] = PASS_SCORE - 1;
-  assert.equal(nextStep(p, []).id, 'one-0', 'a run below the pass mark does not count');
-  for (const id of ['one-0', 'one-1', 'one-2']) p.best[id] = PASS_SCORE;
+  assert.equal(nextStep(p, []).id, 'one-t0');
+  p.best['one-t0'] = PASS_SCORE - 1;
+  assert.equal(nextStep(p, []).id, 'one-t0', 'a run below the pass mark does not count');
+  for (const id of ['one-t0', 'one-t1', 'one-t2']) p.best[id] = PASS_SCORE;
   assert.equal(nextStep(p, []).id, 'g-first');
   assert.equal(nextStep(p, ['g-first']).id, 'one-3');
   assert.deepEqual(pathCount(p, ['g-first']), { done: 4, total: STEPS.length });
 });
 
 test('an earlier step left undone is next, even with later ones done', () => {
-  const p = { best: { 'one-1': 10, 'one-2': 10 } };
-  assert.equal(nextStep(p, ['g-first']).id, 'one-0');
+  const p = { best: { 'one-t1': 10, 'one-t2': 10 } };
+  assert.equal(nextStep(p, ['g-first']).id, 'one-t0');
 });
 
 test('the whole path done gives no next step', () => {
@@ -68,7 +68,7 @@ test('the whole path done gives no next step', () => {
 test('helpers', () => {
   assert.equal(guideById('g-minor').kind, 'guide');
   assert.equal(guideById('one-0'), null);
-  assert.equal(stepTitle(STEPS[0]), 'One string · Major scale · Do · Re');
+  assert.equal(stepTitle(STEPS[0]), 'One string · Major scale · Do · Sol');
   assert.equal(stepTitle(stepOf('d-quality')), 'Ear drill · Major or minor chord');
   assert.deepEqual(normalizeGuides(['g-first', 'nope', 'g-first', 3]), ['g-first']);
   assert.deepEqual(normalizeGuides(null), []);

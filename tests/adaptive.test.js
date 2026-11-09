@@ -80,6 +80,18 @@ test('adaptive deck keeps the newest note of a growing level', () => {
   }
 });
 
+test('adaptive deck keeps an explicit newest note that is not the top of the pool', () => {
+  const pool = [0, 2, 4, 7];
+  const weights = new Map(pool.map((n) => [n, n === 7 ? 5 : FLOOR]));
+  for (let seed = 1; seed <= 100; seed++) {
+    const deck = buildAdaptiveDeck(pool, weights, ROUNDS, mulberry32(seed), { keepNewest: true, newest: 2 });
+    assert.ok(deck.filter((d) => d === 2).length >= 2);
+  }
+  const lv = levelsFor('one')[2];
+  const deck = buildAdaptiveDeckFor(lv, pool, weights, ROUNDS, 'major', mulberry32(4));
+  assert.ok(deck.filter((d) => d === lv.newest).length >= 2);
+});
+
 test('adaptive decks work on every level and respect their shape', () => {
   for (const level of levelsFor('pA')) {
     const ctx = buildContext('pA', level, 0, level.mode ?? 'major');

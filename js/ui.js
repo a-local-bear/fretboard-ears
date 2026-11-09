@@ -2,7 +2,7 @@
 
 import {
   OPEN, SCALES, MIN_MIDI, MAX_MIDI, CHAPTERS, ROUNDS, PASS_SCORE, FAMILIES, noteColor, solfegeName, letterName, keyName, keyLetter, degreeIndex,
-  chapterById, levelsFor, buildContext, pickKey, placeChapter, positionsOf, resolutionOf, cadenceFor,
+  chapterById, levelsFor, buildContext, pickKey, placeChapter, positionsOf, resolutionOf, cadenceFor, newestOf,
 } from './data.js';
 import { buildDeck } from './deck.js';
 import { buildSequenceDeck } from './phrase.js';
@@ -236,7 +236,7 @@ const SCREENS = {
 
   explore() {
     const ds = degrees();
-    const newest = ds[ds.length - 1];
+    const newest = level().grow != null ? newestOf(level(), ds) : ds[ds.length - 1];
     const intro = level().grow != null
       ? `New note: <b>${coloredName(newest, solfegeName(newest))}</b>${S.settings.labels === 'letters' ? ` (${coloredName(newest, letterName(newest, S.ctx.keyPc, S.ctx.mode))})` : ''}.`
       : `${ds.length} notes, ${ds.length > 8 ? 'from ' : ''}<b>${noteName(ds[0])}</b> to <b>${noteName(newest)}</b>.`;
@@ -840,7 +840,7 @@ function makeDeck(adaptive) {
     const weights = noteWeights(loadStats(), degrees(), { log: loadLog() });
     return buildAdaptiveDeckFor(lv, degrees(), weights, ROUNDS, S.ctx.mode);
   }
-  return lv.len > 1 ? buildSequenceDeck(lv, degrees(), ROUNDS, S.ctx.mode) : buildDeck(degrees(), ROUNDS);
+  return lv.len > 1 ? buildSequenceDeck(lv, degrees(), ROUNDS, S.ctx.mode) : buildDeck(degrees(), ROUNDS, Math.random, lv.grow != null ? newestOf(lv, degrees()) : undefined);
 }
 
 function startLevel() {
