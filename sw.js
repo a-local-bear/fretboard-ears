@@ -2,7 +2,7 @@
 // The block between the STAMP markers is rewritten by tools/stamp_version.py; don't edit it by hand.
 
 // STAMP:BEGIN
-const CACHE = 'fe-f71c942f49';
+const CACHE = 'fe-9b5d5bb262';
 const PRECACHE = [
   "./",
   "fonts/fraunces-latin-wght-normal.woff2",

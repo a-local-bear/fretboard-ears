@@ -67,4 +67,4 @@ If you add a new kind of file, also add its glob to `PATTERNS` in `tools/stamp_v
 
 - `fe-settings`: `{labels: "solfege"|"letters"|"hidden", ref: "cadence"|"do"|"none"}`
 - `fe-progress`: `{best: {"<chapter>-<level>": 0..10}, unlockAll}`. Chapter ids are `one`, `pA`, `pB` and `pC`. Levels are numbered from 0.
-- `fe-log`: the last 5000 answers as `{t, ch, lvl, heard, answered, ref, labels}`. Degrees run 0 = Do to 7 = Do'.
+- `fe-log`: the last 5000 rounds as `{t, ch, lvl, heard, answered, tries, ref, labels}`. `answered` is the first tap, `tries` the taps needed to find the note. Degrees run 0 = Do to 7 = Do'.

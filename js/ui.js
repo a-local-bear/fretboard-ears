@@ -13,7 +13,6 @@ import { ensureAudio, prerender, playNote, playReference, playArpeggio, stopAll,
 import { fretboardSVG } from './fretboard.js';
 
 const CORRECT_DELAY = 1100;
-const WRONG_DELAY = 2300;
 const VERTICAL_BELOW = 640;
 
 const S = {
@@ -23,7 +22,8 @@ const S = {
   deck: [],
   round: 0,
   answers: [], // { heard, answered }
-  phase: 'listen', // listen | feedback
+  phase: 'listen', // listen → (retry after a miss) → feedback once the right note is found
+  tries: 0, // taps in the current round
   states: {}, // degree → dot state for the current round
   noteAt: 0, // context time of the current mystery note
   result: null, // { score, newBest, passed }
@@ -141,7 +141,7 @@ const SCREENS = {
         <span class="pips">${pips}</span>
         <span class="count">${Math.min(S.round + 1, ROUNDS)}/${ROUNDS}</span>
       </div>
-      <p class="prompt">${S.phase === 'feedback' ? feedbackText() : 'Which note was that?'}</p>
+      <p class="prompt">${promptText()}</p>
       <div class="boardwrap">${board({ states: S.states, disabled: S.phase === 'feedback' })}</div>
       <div class="actions">
         ${btn('reference', refLabel(), 'ghost')}
@@ -198,12 +198,13 @@ const SCREENS = {
   },
 };
 
-function feedbackText() {
+function promptText() {
   const a = S.answers[S.answers.length - 1];
-  if (!a) return '';
+  if (S.phase === 'retry') return 'Not that one. Keep looking.';
+  if (S.phase !== 'feedback' || !a) return 'Which note was that?';
   return a.heard === a.answered
     ? `Yes, ${esc(noteName(a.heard))}.`
-    : `That was ${esc(noteName(a.heard))}.`;
+    : `There it is: ${esc(noteName(a.heard))}.`;
 }
 
 // ---------- flow ----------
@@ -251,22 +252,38 @@ function startRound() {
 function replay() {
   if (!ensureAudio()) return;
   stopAll();
-  const d = S.phase === 'feedback' ? S.answers[S.answers.length - 1].heard : S.deck[S.round];
+  const d = S.deck[S.round];
   playNote(midiOf(chapter().notes[d]), now() + 0.03);
 }
 
+/**
+ * Only the first tap of a round counts. After a miss the player keeps tapping (each wrong dot
+ * turns red and plays its note) until they find the right one; then the round moves on.
+ */
 function answer(d) {
-  if (S.phase !== 'listen') return;
+  if (S.phase !== 'listen' && S.phase !== 'retry') return;
   const heard = S.deck[S.round];
   const ok = d === heard;
-  S.answers.push({ heard, answered: d });
-  S.phase = 'feedback';
-  S.states = ok ? { [d]: 'correct' } : { [d]: 'wrong', [heard]: 'reveal' };
-  appendLog([{ t: Date.now(), ch: S.chapterId, lvl: S.level, heard, answered: d, ref: S.settings.ref, labels: S.settings.labels }]);
+  if (S.phase === 'listen') {
+    S.answers.push({ heard, answered: d });
+    S.tries = 0;
+  }
+  S.tries++;
   stopAll();
-  playNote(midiOf(chapter().notes[heard]), now() + 0.03);
+  playNote(midiOf(chapter().notes[d]), now() + 0.03);
+  if (ok) {
+    S.phase = 'feedback';
+    S.states = { ...S.states, [d]: 'correct' };
+    appendLog([{
+      t: Date.now(), ch: S.chapterId, lvl: S.level, heard, answered: S.answers[S.answers.length - 1].answered,
+      tries: S.tries, ref: S.settings.ref, labels: S.settings.labels,
+    }]);
+    timer = setTimeout(advance, CORRECT_DELAY);
+  } else {
+    S.phase = 'retry';
+    S.states = { ...S.states, [d]: 'wrong' };
+  }
   render();
-  timer = setTimeout(advance, ok ? CORRECT_DELAY : WRONG_DELAY);
 }
 
 function advance() {
