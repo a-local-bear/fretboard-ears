@@ -56,14 +56,16 @@ export function detectPitch(buf, sr, { minFreq = 70, maxFreq = 1100, cutoff = 0.
  * `degreeMidis[d]` is the MIDI of degree d, or undefined when d isn't in the level.
  * Returns { nearest, cents, degree } where degree is null for notes outside the level.
  * Do and Do' share a name: the one closest in pitch wins.
+ * Ids may be any non-negative integer (semitone offsets), so the array can be sparse.
+ * With `exact`, only the note in the right octave counts (levels that span several octaves).
  */
-export function matchDegree(midi, degreeMidis) {
+export function matchDegree(midi, degreeMidis, { exact = false } = {}) {
   const nearest = Math.round(midi);
   const cents = Math.round((midi - nearest) * 100);
   const pc = ((nearest % 12) + 12) % 12;
   let degree = null;
   degreeMidis.forEach((m, d) => {
-    if (m == null || m % 12 !== pc) return;
+    if (m == null || (exact ? m !== nearest : m % 12 !== pc)) return;
     if (degree === null || Math.abs(m - nearest) < Math.abs(degreeMidis[degree] - nearest)) degree = d;
   });
   return { nearest, cents, degree };
