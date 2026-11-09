@@ -78,5 +78,5 @@ The synth also plays any note whose sample hasn't loaded yet.
 ## Stored data (localStorage)
 
 - `fe-settings`: `{labels: "solfege"|"letters"|"hidden", ref: "cadence"|"do"|"none", sound: "guitar"|"synth"}`
-- `fe-progress`: `{best: {"<chapter>-<level>": 0..10}, unlockAll}`. Chapter ids are `one`, `pA`, `pB` and `pC`. Levels are numbered from 0.
+- `fe-progress`: `{best: {"<chapter>-<level>": 0..10}}`. Every level is open; there is no unlocking. Chapter ids are `one`, `pA`, `pB` and `pC`. Levels are numbered from 0.
 - `fe-log`: the last 5000 rounds as `{t, ch, lvl, heard, answered, tries, ref, labels}`. `answered` is the first tap, `tries` the taps needed to find the note. Degrees run 0 = Do to 7 = Do'.

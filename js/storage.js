@@ -28,7 +28,7 @@ export function loadProgress() {
   if (!p || typeof p !== 'object') return emptyProgress();
   const best = {};
   for (const [k, v] of Object.entries(p.best || {})) if (Number.isInteger(v) && v >= 0 && v <= 10) best[k] = v;
-  return { best, unlockAll: !!p.unlockAll };
+  return { best };
 }
 export const saveProgress = (p) => write(KEYS.progress, p);
 

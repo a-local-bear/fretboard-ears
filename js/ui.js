@@ -6,7 +6,7 @@ import {
 } from './data.js';
 import { buildDeck } from './deck.js';
 import {
-  isPassed, isUnlocked, chapterUnlocked, bestScore, levelPassed, recordScore, nextLevel, passedCount,
+  isPassed, bestScore, recordScore, nextLevel, playedCount,
 } from './progress.js';
 import { loadSettings, saveSettings, loadProgress, saveProgress, appendLog, requestPersistence } from './storage.js';
 import { ensureAudio, prerender, playNote, playReference, playArpeggio, stopAll, now, setSound } from './audio.js';
@@ -73,20 +73,16 @@ const refLabel = () => (S.settings.ref === 'do' ? 'Hear Do' : 'Hear key');
 
 const SCREENS = {
   home() {
-    const total = CHAPTERS.length * LEVELS_PER_CHAPTER;
     return `${topbar('Fretboard Ears')}
     <main class="screen home">
       <p class="lede">Hear a note in C major, then find it on the neck.</p>
-      <p class="tally"><b>${passedCount(S.progress)}</b> of ${total} levels passed</p>
       <ol class="chapters">
         ${CHAPTERS.map((c, i) => {
-          const open = chapterUnlocked(S.progress, c.id);
-          let passed = 0;
-          for (let l = 0; l < LEVELS_PER_CHAPTER; l++) if (levelPassed(S.progress, c.id, l)) passed++;
-          return `<li><button class="chapter ${open ? '' : 'locked'}" data-action="chapter" data-arg="${c.id}" data-focus-key="chapter-${c.id}" ${open ? '' : 'disabled'}>
+          const played = playedCount(S.progress, c.id);
+          return `<li><button class="chapter" data-action="chapter" data-arg="${c.id}" data-focus-key="chapter-${c.id}">
             <span class="cnum">${i + 1}</span>
             <span class="cbody"><span class="cname">${esc(c.name)}</span><span class="cdesc">${esc(c.desc)}</span></span>
-            <span class="cmeta">${open ? `${passed}/${LEVELS_PER_CHAPTER}` : 'Locked'}</span>
+            <span class="cmeta">${played ? `${played}/${LEVELS_PER_CHAPTER} played` : ''}</span>
           </button></li>`;
         }).join('')}
       </ol>
@@ -100,14 +96,13 @@ const SCREENS = {
       <p class="lede">${esc(c.desc)}</p>
       <ol class="levelgrid">
         ${Array.from({ length: LEVELS_PER_CHAPTER }, (_, l) => {
-          const open = isUnlocked(S.progress, c.id, l);
           const best = bestScore(S.progress, c.id, l);
           const ds = levelDegrees(l);
-          return `<li><button class="levelcard ${open ? '' : 'locked'} ${best != null && isPassed(best) ? 'passed' : ''}" data-action="level" data-arg="${l}" data-focus-key="level-${l}" ${open ? '' : 'disabled'}>
+          return `<li><button class="levelcard ${best != null && isPassed(best) ? 'passed' : ''}" data-action="level" data-arg="${l}" data-focus-key="level-${l}">
             <span class="lnum">Level ${l + 1}</span>
             <span class="lnotes">${ds.map((d) => `<i style="--c:${DEGREE_COLORS[d]}"></i>`).join('')}</span>
             <span class="lnames">${esc(noteName(0))} → ${esc(noteName(ds[ds.length - 1]))}</span>
-            <span class="lbest">${open ? (best == null ? 'Not played' : `Best ${best}/${ROUNDS}`) : 'Locked'}</span>
+            <span class="lbest">${best == null ? 'Not played' : `Best ${best}/${ROUNDS}`}</span>
           </button></li>`;
         }).join('')}
       </ol>
@@ -163,12 +158,12 @@ const SCREENS = {
       return `<li>Heard <b>${esc(noteName(h))}</b>, answered <b>${esc(noteName(ans))}</b>${n > 1 ? ` ×${n}` : ''}</li>`;
     }).join('');
     const nxt = nextLevel(S.chapterId, S.level);
-    const canNext = passed && nxt && isUnlocked(S.progress, nxt.chapterId, nxt.level);
+    const canNext = !!nxt;
     return `${topbar(`Level ${S.level + 1}`, 'levels')}
     <main class="screen results">
       <div class="scorecard ${passed ? 'pass' : 'fail'}">
         <p class="big"><b>${score}</b>/${ROUNDS}</p>
-        <p class="verdict">${passed ? (score === ROUNDS ? 'Perfect.' : 'Passed.') : `Not yet. You need 8 to pass.`}</p>
+        <p class="verdict">${score === ROUNDS ? 'Perfect.' : passed ? 'Well done.' : 'Keep practising.'}</p>
         ${newBest ? '<p class="newbest">New best</p>' : ''}
       </div>
       ${confusions ? `<h2 class="sub">Mix-ups</h2><ul class="confusions">${confusions}</ul>` : ''}
@@ -191,9 +186,6 @@ const SCREENS = {
         <p class="hint">Cadence strums C–F–G–C. Do plays the root. Nothing is the hardest.</p></section>
       <section><h2 class="sub">Sound</h2>${seg('sound', [['guitar', 'Electric guitar'], ['synth', 'Synth']])}
         <p class="hint">Electric guitar uses recorded notes. Synth is the original plucked-string sound.</p></section>
-      <section><h2 class="sub">Levels</h2>
-        <button class="toggle" role="switch" aria-checked="${S.progress.unlockAll}" data-action="unlockAll" data-focus-key="unlockAll">
-          <span class="knob"></span><span>Unlock all levels</span></button></section>
       <section><h2 class="sub">Progress</h2>
         ${btn('reset', S.confirmReset ? 'Tap again to erase all scores' : 'Reset progress', S.confirmReset ? 'danger' : 'ghost')}</section>
     </main>`;
@@ -354,11 +346,6 @@ const ACTIONS = {
     }
     render();
   },
-  unlockAll: () => {
-    S.progress = { ...S.progress, unlockAll: !S.progress.unlockAll };
-    saveProgress(S.progress);
-    render();
-  },
   reset: () => {
     clearTimeout(resetTimer);
     if (!S.confirmReset) {
@@ -366,7 +353,7 @@ const ACTIONS = {
       resetTimer = setTimeout(() => { S.confirmReset = false; render(); }, 3000);
     } else {
       S.confirmReset = false;
-      S.progress = { best: {}, unlockAll: S.progress.unlockAll };
+      S.progress = { best: {} };
       saveProgress(S.progress);
     }
     render();
@@ -396,7 +383,7 @@ function onKey(e) {
     else if (S.screen === 'play') (S.phase === 'feedback' ? advance() : replay());
     else if (S.screen === 'results') {
       const nxt = nextLevel(S.chapterId, S.level);
-      if (S.result.passed && nxt && isUnlocked(S.progress, nxt.chapterId, nxt.level)) ACTIONS.next();
+      if (nxt) ACTIONS.next();
       else ACTIONS.retry();
     } else return;
     e.preventDefault();
