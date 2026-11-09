@@ -6,6 +6,7 @@ import {
 } from './data.js';
 import { buildDeck } from './deck.js';
 import { buildSequenceDeck } from './phrase.js';
+import { noteWeights, buildAdaptiveDeckFor } from './adaptive.js';
 import {
   isPassed, bestScore, recordScore, nextLevel, playedCount,
 } from './progress.js';
@@ -344,6 +345,8 @@ const SCREENS = {
         <p class="hint">Once per level plays it before the first note only. Hear key replays it any time.</p></section>
       <section><h2 class="sub">Resolve to Do</h2>${seg('resolve', [['on', 'On'], ['off', 'Off']])}
         <p class="hint">After a correct answer, hear the note walk stepwise to the nearest Do.</p></section>
+      <section><h2 class="sub">Adaptive practice</h2>${seg('adaptive', [['off', 'Off'], ['on', 'On']])}
+        <p class="hint">On deals weak, slow and confused notes more often. Mastered notes still appear.</p></section>
       <section><h2 class="sub">Sound</h2>${seg('sound', [['guitar', 'Electric guitar'], ['synth', 'Synth']])}
         <p class="hint">Electric guitar uses recorded notes. Synth is the original plucked-string sound.</p></section>
       <section><h2 class="sub">Progress</h2>
@@ -397,8 +400,18 @@ function openLevel(index) {
   if (ensureAudio()) prerender([...levelMidis(), ...cadenceMidis()]);
 }
 
+/** The deck for the level in S.ctx: weighted by the player's stats when adaptive, else the plain rules. */
+function makeDeck(adaptive = S.settings.adaptive === 'on') {
+  const lv = level();
+  if (adaptive) {
+    const weights = noteWeights(loadStats(), degrees(), { log: loadLog() });
+    return buildAdaptiveDeckFor(lv, degrees(), weights, ROUNDS, S.ctx.mode);
+  }
+  return lv.len > 1 ? buildSequenceDeck(lv, degrees(), ROUNDS, S.ctx.mode) : buildDeck(degrees(), ROUNDS);
+}
+
 function startLevel() {
-  S.deck = level().len > 1 ? buildSequenceDeck(level(), degrees(), ROUNDS, S.ctx.mode) : buildDeck(degrees(), ROUNDS);
+  S.deck = makeDeck();
   S.round = 0;
   S.answers = [];
   S.screen = 'play';
