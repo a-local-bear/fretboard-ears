@@ -254,3 +254,8 @@ button { font: inherit; color: inherit; }
 .muted { color: var(--muted); }
 .figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
 .fig b { font: 700 32px/1.1 var(--display); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+
+/* Daily practice summary: one row per block */
+.confusions.blocks li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: baseline; }
+.confusions.blocks .keyline { grid-column: 1 / -1; text-align: left; }
+.confusions.blocks b { color: var(--ink); font-variant-numeric: tabular-nums; }
