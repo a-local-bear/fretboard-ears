@@ -18,7 +18,7 @@ export function loadSettings() {
   const s = read(KEYS.settings) || {};
   return {
     labels: ['solfege', 'letters', 'hidden'].includes(s.labels) ? s.labels : DEFAULT_SETTINGS.labels,
-    ref: ['cadence', 'do', 'none'].includes(s.ref) ? s.ref : DEFAULT_SETTINGS.ref,
+    ref: ['cadence', 'do', 'drone', 'none'].includes(s.ref) ? s.ref : DEFAULT_SETTINGS.ref,
     refWhen: ['each', 'level'].includes(s.refWhen) ? s.refWhen : DEFAULT_SETTINGS.refWhen,
     resolve: ['on', 'off'].includes(s.resolve) ? s.resolve : DEFAULT_SETTINGS.resolve,
     sound: ['guitar', 'synth'].includes(s.sound) ? s.sound : DEFAULT_SETTINGS.sound,

@@ -18,6 +18,9 @@ const CADENCE_TO_NOTE = 1.15;
 const DO_TO_NOTE = 0.9;
 const STRUM_STEP = 0.022;
 const CHORD_DAMP = 0.05; // seconds of fade on the old chord at a chord change
+const DRONE_LEAD = 1.4; // seconds the drone sounds alone before the mystery note
+const DRONE_GAIN = 0.075; // per oscillator; soft, a bed rather than a note
+const DRONE_FADE = 0.3;
 
 /** Create or resume the context. Call from a user gesture (required on mobile). */
 export function ensureAudio() {
@@ -142,13 +145,56 @@ function fadeVoice(v, at, dur) {
   } catch { /* already stopped */ }
 }
 
-/** Fade out everything currently sounding or scheduled. */
-export function stopAll(dur = 0.06) {
+/**
+ * Fade out everything currently sounding or scheduled; with `keepDrone` the drone carries on
+ * (it is the one voice that has no natural end).
+ */
+export function stopAll(dur = 0.06, keepDrone = false) {
   if (!ctx) return;
   const t = ctx.currentTime;
-  for (const v of voices) fadeVoice(v, t, dur);
-  voices.clear();
-  fadingUntil = t + dur;
+  for (const v of [...voices]) {
+    if (keepDrone && v.drone) continue;
+    const d = v.drone ? Math.max(dur, DRONE_FADE) : dur;
+    fadeVoice(v, t, d);
+    voices.delete(v);
+    fadingUntil = Math.max(fadingUntil, t + d);
+  }
+}
+
+/** True while a drone is sounding. */
+export const droneActive = () => [...voices].some((v) => v.drone && v.endAt === Infinity);
+
+/**
+ * A soft sustained root + fifth (triangle oscillators) from context time `when`. It rings until
+ * stopAll() or, with `until`, fades by itself at that time. While it rings, quietAt() is Infinity
+ * (the mic never listens), so the UI does not use a drone together with the mic.
+ */
+export function startDrone(tonicMidi, when = now(), until = null) {
+  if (!ctx) return [];
+  const pc = ((tonicMidi % 12) + 12) % 12;
+  const root = 48 + ((pc - 48) % 12 + 12) % 12; // C3 … B3
+  const start = Math.max(when, ctx.currentTime);
+  return [root, root + 7].map((m) => {
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = midiToFreq(m);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, start);
+    g.gain.linearRampToValueAtTime(DRONE_GAIN, start + DRONE_FADE);
+    osc.connect(g).connect(out);
+    osc.start(start);
+    const voice = { src: osc, gain: g, endAt: Infinity, drone: true };
+    voices.add(voice);
+    osc.onended = () => voices.delete(voice);
+    if (until != null) {
+      // Scheduled by hand: fadeVoice() reads the gain *now*, which is still 0 before the fade-in.
+      g.gain.setValueAtTime(DRONE_GAIN, Math.max(until, start + DRONE_FADE));
+      g.gain.linearRampToValueAtTime(0, Math.max(until, start + DRONE_FADE) + DRONE_FADE);
+      osc.stop(Math.max(until, start + DRONE_FADE) + DRONE_FADE + 0.02);
+      voice.endAt = Math.max(until, start + DRONE_FADE) + DRONE_FADE;
+    }
+    return voice;
+  });
 }
 
 function strum(notes, when, gain = 0.3) {
@@ -156,11 +202,12 @@ function strum(notes, when, gain = 0.3) {
 }
 
 /**
- * Play the reference for `mode` ('cadence' | 'do' | 'none') starting now; `chords` are the cadence voicings (MIDI arrays).
+ * Play the reference for `mode` ('cadence' | 'do' | 'drone' | 'none') starting now; `chords` are the cadence voicings (MIDI arrays).
  * Returns the context time at which the mystery note should start.
+ * `opts.droneFor`: seconds after which a drone fades by itself (the "Hear key" button); otherwise it holds.
  * Reference voices fade as the mystery note begins so it stands alone.
  */
-export function playReference(mode, doMidi, chords = CADENCE.map((n) => CHORDS[n])) {
+export function playReference(mode, doMidi, chords = CADENCE.map((n) => CHORDS[n]), opts = {}) {
   const t0 = now() + 0.05;
   let refVoices = [];
   let noteAt = t0;
@@ -178,6 +225,10 @@ export function playReference(mode, doMidi, chords = CADENCE.map((n) => CHORDS[n
   } else if (mode === 'do') {
     refVoices.push(playNote(doMidi, t0));
     noteAt = t0 + DO_TO_NOTE;
+  } else if (mode === 'drone') {
+    // The drone keeps sounding under the note: it is not in refVoices, so it isn't faded here.
+    startDrone(doMidi, t0, opts.droneFor != null ? t0 + opts.droneFor : null);
+    noteAt = t0 + DRONE_LEAD;
   }
   for (const v of refVoices) if (v) fadeVoice(v, noteAt - 0.05, 0.25);
   return noteAt;

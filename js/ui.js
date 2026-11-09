@@ -16,7 +16,7 @@ import {
   streaks, heatmap, totals, degreeAccuracy, topConfusions, triesAfterMiss, avgResponseMs, trend,
 } from './stats.js';
 import {
-  ensureAudio, prerender, playNote, playReference, playArpeggio, stopAll, now, setSound, setNoteLimit, quietAt,
+  ensureAudio, prerender, playNote, playReference, playArpeggio, stopAll, droneActive, now, setSound, setNoteLimit, quietAt,
 } from './audio.js';
 import { fretboardSVG } from './fretboard.js';
 import { startMic, stopMic, micActive, micSupported } from './mic.js';
@@ -116,7 +116,10 @@ function micBar() {
     ${on && S.mic === 'blocked' ? '<p class="micnote">The microphone is blocked. Allow it for this site in your browser settings, then turn the mic off and on again.</p>' : ''}`;
 }
 
-const refLabel = () => (S.settings.ref === 'do' ? 'Hear Do' : 'Hear key');
+const refLabel = () => {
+  const r = referenceFor(S.settings, 0);
+  return r === 'do' ? 'Hear Do' : r === 'drone' ? 'Hear drone' : 'Hear key';
+};
 
 const SCREENS = {
   home() {
@@ -318,8 +321,8 @@ const SCREENS = {
     <main class="screen settings">
       <section><h2 class="sub">Dot labels</h2>${seg('labels', [['solfege', 'Solfège'], ['letters', 'Letters'], ['hidden', 'Hidden']])}
         <p class="hint">Hidden shows plain dots, so you answer by position only.</p></section>
-      <section><h2 class="sub">Reference</h2>${seg('ref', [['cadence', 'Cadence'], ['do', 'Do'], ['none', 'Nothing']])}
-        <p class="hint">Cadence strums C–F–G–C. Do plays the root. Nothing is the hardest.</p>
+      <section><h2 class="sub">Reference</h2>${seg('ref', [['cadence', 'Cadence'], ['do', 'Do'], ['drone', 'Drone'], ['none', 'Nothing']])}
+        <p class="hint">Cadence strums C–F–G–C. Do plays the root. Drone holds the root and fifth under the note until you answer (it plays Do instead while the mic is on, since the mic would hear it). Nothing is the hardest.</p>
         ${seg('refWhen', [['each', 'Every note'], ['level', 'Once per level']])}
         <p class="hint">Once per level plays it before the first note only. Hear key replays it any time.</p></section>
       <section><h2 class="sub">Resolve to Do</h2>${seg('resolve', [['on', 'On'], ['off', 'Off']])}
@@ -391,7 +394,7 @@ function startRound() {
 
 function replay() {
   if (!ensureAudio()) return;
-  stopAll();
+  stopAll(undefined, true); // a drone keeps holding under the replayed note
   const d = S.deck[S.round];
   playNote(midiOfNote(d), now() + 0.03);
 }
@@ -411,7 +414,7 @@ function answer(d, fromMic = false, pos = null) {
   }
   S.tries++;
   S.resolution = [];
-  stopAll();
+  stopAll(undefined, !ok); // a wrong tap keeps the drone; the right answer (feedback) ends it
   if (!fromMic) playNote(midiOfNote(d), now() + 0.03);
   if (ok) {
     S.phase = 'feedback';
@@ -486,8 +489,10 @@ function advance() {
 
 function playReferenceOnly() {
   if (!ensureAudio()) return;
+  if (S.screen === 'play' && droneActive()) return; // already sounding under the round
   stopAll();
-  playReference(S.settings.ref === 'do' ? 'do' : 'cadence', S.ctx.tonic, S.ctx.cadence.chords);
+  const mode = referenceFor({ ...S.settings, refWhen: 'each' }, 0);
+  playReference(mode === 'none' ? 'cadence' : mode, S.ctx.tonic, S.ctx.cadence.chords, { droneFor: 3 });
 }
 
 function tapDot(d, pos = null) {

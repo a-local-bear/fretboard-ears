@@ -1,6 +1,12 @@
-// Which reference (cadence / do / none) to play before a round's note.
+// Which reference (cadence / do / drone / none) to play before a round's note.
 
-/** Only the first round gets the reference when the player chose "once per level". */
+/**
+ * Only the first round gets the reference when the player chose "once per level".
+ * A drone is a continuous sound, which the mic would hear as an answer (and which keeps the mic
+ * waiting forever), so with the mic on it falls back to the single Do note.
+ */
 export function referenceFor(settings, round) {
-  return settings.refWhen === 'level' && round > 0 ? 'none' : settings.ref;
+  if (settings.refWhen === 'level' && round > 0) return 'none';
+  if (settings.ref === 'drone') return settings.mic ? 'do' : 'drone';
+  return settings.ref;
 }
