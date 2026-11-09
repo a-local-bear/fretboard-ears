@@ -2,7 +2,7 @@
 // The block between the STAMP markers is rewritten by tools/stamp_version.py; don't edit it by hand.
 
 // STAMP:BEGIN
-const CACHE = 'fe-9486f6a428';
+const CACHE = 'fe-f3ebb64eb3';
 const PRECACHE = [
   "./",
   "fonts/jetbrains-mono-latin-wght-normal.woff2",
@@ -16,6 +16,7 @@ const PRECACHE = [
   "js/data.js",
   "js/deck.js",
   "js/fretboard.js",
+  "js/harmony.js",
   "js/ks.js",
   "js/main.js",
   "js/mic.js",
@@ -23,6 +24,7 @@ const PRECACHE = [
   "js/progress.js",
   "js/reference.js",
   "js/samples.js",
+  "js/sequencer.js",
   "js/stats.js",
   "js/storage.js",
   "js/ui.js",

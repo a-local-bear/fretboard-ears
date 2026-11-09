@@ -3,6 +3,7 @@
 import { renderPluck, ksParams, midiToFreq } from './ks.js';
 import { CHORDS, CADENCE, CHAPTERS, midiOf } from './data.js';
 import { loadSample } from './samples.js';
+import { loopEvents, cycleSeconds, dueEvents } from './sequencer.js';
 
 let ctx = null;
 let out = null; // input of the shared chain: lowpass → master → compressor → destination
@@ -248,6 +249,53 @@ export function playReference(mode, doMidi, chords = CADENCE.map((n) => CHORDS[n
   }
   for (const v of refVoices) if (v) fadeVoice(v, noteAt - 0.05, 0.25);
   return noteAt;
+}
+
+// ---------- looping backing track ----------
+
+const LOOP_TICK_MS = 40; // how often the scheduler wakes up (only to look ahead; it does not time the notes)
+const LOOP_AHEAD = 0.25; // seconds of strums scheduled on the audio clock ahead of now
+const LOOP_LEAD = 0.1; // seconds before the first strum
+let loop = null;
+
+export const loopActive = () => !!loop;
+
+/**
+ * Loop a chord progression until stopLoop(). `chords` are voicings (MIDI arrays), one per slot.
+ * A lookahead scheduler: a timer wakes every LOOP_TICK_MS and schedules whatever strums fall in the
+ * next LOOP_AHEAD seconds at exact AudioContext times, so timer jitter never reaches the music.
+ * `onChord(index, time)` is called when a chord's first strum is scheduled (time: context clock).
+ */
+export function startLoop({ chords, bpm, bars, onChord = null }) {
+  if (!ctx) return false;
+  stopLoop();
+  const events = loopEvents(chords.length, bpm, bars);
+  const lp = { events, cycle: cycleSeconds(chords.length, bpm, bars), start: ctx.currentTime + LOOP_LEAD, next: 0, prev: [], timer: null };
+  loop = lp;
+  const tick = () => {
+    if (loop !== lp) return;
+    const { due, next } = dueEvents(lp.events, lp.cycle, lp.start, lp.next, ctx.currentTime, LOOP_AHEAD);
+    lp.next = next;
+    for (const e of due) {
+      const up = e.dir === 'up'; // an up-strum touches only the top strings, and lets the chord ring
+      const notes = up ? chords[e.chord].slice(-3).reverse() : chords[e.chord];
+      if (!up) for (const v of lp.prev) if (v) fadeVoice(v, e.time - CHORD_DAMP, CHORD_DAMP + 0.03);
+      const played = strum(notes, e.time, e.gain);
+      lp.prev = up ? lp.prev.concat(played) : played;
+      if (e.change && onChord) onChord(e.chord, e.time);
+    }
+  };
+  tick();
+  lp.timer = setInterval(tick, LOOP_TICK_MS);
+  return true;
+}
+
+/** Stop the loop and fade out what it scheduled (also anything else playing). */
+export function stopLoop() {
+  if (!loop) return;
+  clearInterval(loop.timer);
+  loop = null;
+  stopAll(0.12);
 }
 
 /** Strum `chord` and sound `midi` over it (the replay of a round with a chord). Returns the note's time. */

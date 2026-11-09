@@ -1,10 +1,10 @@
 // localStorage wrappers. Every access is guarded: storage can be missing or throw.
 
 import { normalizeProgress } from './progress.js';
-import { OVER_OPTIONS } from './harmony.js';
+import { OVER_OPTIONS, normalizeBacking } from './harmony.js';
 import { addEntry, buildStats, validStats } from './stats.js';
 
-const KEYS = { settings: 'fe-settings', progress: 'fe-progress', log: 'fe-log', stats: 'fe-stats', key: 'fe-key' };
+const KEYS = { settings: 'fe-settings', progress: 'fe-progress', log: 'fe-log', stats: 'fe-stats', key: 'fe-key', backing: 'fe-backing' };
 const LOG_MAX = 5000;
 const DEFAULT_SETTINGS = { labels: 'solfege', ref: 'cadence', refWhen: 'each', resolve: 'on', over: 'off', sound: 'guitar', mic: false };
 
@@ -38,6 +38,10 @@ export function loadKey() {
   return Number.isInteger(k) && k >= 0 && k < 12 ? k : 0;
 }
 export const saveKey = (k) => write(KEYS.key, k);
+
+/** The last backing track: { key, mode, slots (roman numerals), tempo, bars }, always valid. */
+export const loadBacking = () => normalizeBacking(read(KEYS.backing));
+export const saveBacking = (b) => write(KEYS.backing, normalizeBacking(b));
 
 export function loadLog() {
   const log = read(KEYS.log);

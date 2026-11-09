@@ -1,7 +1,7 @@
 // App state, screens and input handling. Full re-render via innerHTML, skipped when nothing changed.
 
 import {
-  CHAPTERS, ROUNDS, FAMILIES, noteColor, solfegeName, letterName, keyName, keyLetter, degreeIndex,
+  OPEN, SCALES, MIN_MIDI, MAX_MIDI, CHAPTERS, ROUNDS, FAMILIES, noteColor, solfegeName, letterName, keyName, keyLetter, degreeIndex,
   chapterById, levelsFor, buildContext, pickKey, placeChapter, positionsOf, resolutionOf,
 } from './data.js';
 import { buildDeck } from './deck.js';
@@ -10,19 +10,22 @@ import {
 } from './progress.js';
 import {
   loadSettings, saveSettings, loadProgress, saveProgress, loadKey, saveKey, appendLog, requestPersistence,
-  loadStats, loadLog,
+  loadStats, loadLog, loadBacking, saveBacking,
 } from './storage.js';
 import {
   streaks, heatmap, totals, degreeAccuracy, topConfusions, triesAfterMiss, avgResponseMs, trend,
 } from './stats.js';
 import {
-  ensureAudio, prerender, playNote, playReference, playOver, playArpeggio, stopAll, droneActive, now, setSound, setNoteLimit, quietAt,
+  ensureAudio, prerender, playNote, playReference, playOver, playArpeggio, startLoop, stopLoop, loopActive, stopAll, droneActive, now, setSound, setNoteLimit, quietAt,
 } from './audio.js';
 import { fretboardSVG } from './fretboard.js';
 import { startMic, stopMic, micActive, micSupported } from './mic.js';
 import { matchDegree, SHARP_NAMES } from './pitch.js';
 import { referenceFor } from './reference.js';
-import { chordsFor, voicing, pickOverChord } from './harmony.js';
+import {
+  chordsFor, chordByNumeral, chordName, chordPcs, voicing, pickOverChord, convertSlots, PRESETS, presetLabel,
+  MIN_SLOTS, MAX_SLOTS, TEMPO_RANGE, BARS_OPTIONS,
+} from './harmony.js';
 
 const CORRECT_DELAY = 1100;
 const RESOLVE_STEP = 0.75; // seconds per quarter note of the resolution (80 bpm)
@@ -30,7 +33,7 @@ const MIC_NOTE_LIMIT = 1.6; // seconds the app's notes may ring while the mic li
 const VERTICAL_BELOW = 640;
 
 const S = {
-  screen: 'home', // home | levels | explore | play | results | settings | stats
+  screen: 'home', // home | levels | explore | play | results | settings | stats | backing
   chapterId: 'one',
   level: 0, // index into levelsFor(chapterId)
   keyPc: loadKey(), // tonic of the fixed-key levels (0 = C … 11 = B)
@@ -50,6 +53,7 @@ const S = {
   result: null, // { score, newBest, passed }
   confirmReset: false,
   mic: 'off', // off | starting | on | blocked (runtime state; the wish to use it is settings.mic)
+  bt: { ...loadBacking(), playing: false, cur: null, sel: 0, flash: null }, // backing track: saved fields + runtime state
   settings: loadSettings(),
   progress: loadProgress(),
   vertical: window.innerWidth < VERTICAL_BELOW,
@@ -138,7 +142,7 @@ const SCREENS = {
           </button></li>`;
         }).join('')}
       </ol>
-      <div class="actions">${btn('stats', 'Practice stats', 'ghost')}</div>
+      <div class="actions">${btn('backing', 'Backing track', 'ghost')}${btn('stats', 'Practice stats', 'ghost')}</div>
     </main>`;
   },
 
@@ -316,6 +320,41 @@ const SCREENS = {
     </main>`;
   },
 
+  backing() {
+    const b = S.bt;
+    const chords = btChords();
+    const keys = Array.from({ length: 12 }, (_, pc) => `<button class="keychip ${pc === b.key ? 'on' : ''}" data-action="btkey" data-arg="${pc}" data-focus-key="btkey-${pc}" aria-pressed="${pc === b.key}">${esc(keyLetter(pc, b.mode))}</button>`).join('');
+    const opts = (action, list, cur) => `<div class="seg" role="radiogroup">${list.map(([v, label]) =>
+      `<button role="radio" aria-checked="${cur === v}" class="${cur === v ? 'on' : ''}" data-action="${action}" data-arg="${v}" data-focus-key="${action}-${v}">${label}</button>`).join('')}</div>`;
+    const sel = chords[b.sel];
+    return `${topbar('Backing track', 'home')}
+    <main class="screen backing">
+      <div class="keybar"><span class="keylabel" id="keylabel">Key</span><div class="keychips" role="group" aria-labelledby="keylabel">${keys}</div>
+        ${opts('btmode', [['major', 'Major'], ['minor', 'Minor']], b.mode)}</div>
+      <section class="btsec"><h2 class="sub">Progression</h2>
+        <div class="slots" id="bt-slots">${chords.map((c, i) => `<button class="slot ${i === b.sel ? 'sel' : ''} ${b.playing && b.cur === i ? 'now' : ''}" data-action="btslot" data-arg="${i}" data-focus-key="btslot-${i}" aria-pressed="${i === b.sel}">
+            <span class="snum">${esc(c.numeral)}</span>${coloredName(c.root, chordName(c, b.key, b.mode))}</button>`).join('')}</div>
+        <div class="slotctl">
+          ${btn('btadd', '+ Chord', 'ghost small')}${btn('btdel', '− Remove', 'ghost small')}
+        </div>
+        <span class="keylabel">Chord for slot ${b.sel + 1}</span>
+        <div class="chordpal" role="group" aria-label="Chord for slot ${b.sel + 1}">${chordsFor(b.mode).map((c) =>
+          `<button class="chordpick ${c.numeral === sel.numeral ? 'on' : ''}" data-action="btchord" data-arg="${esc(c.numeral)}" data-focus-key="btchord-${esc(c.numeral)}" aria-pressed="${c.numeral === sel.numeral}"><span class="snum">${esc(c.numeral)}</span>${coloredName(c.root, chordName(c, b.key, b.mode))}</button>`).join('')}</div>
+        <span class="keylabel">Presets</span>
+        <div class="presets">${PRESETS[b.mode].map((p, i) => `<button class="preset" data-action="btpreset" data-arg="${i}" data-focus-key="btpreset-${i}">${esc(presetLabel(p))}</button>`).join('')}</div>
+      </section>
+      <section class="btsec"><h2 class="sub">Tempo</h2>
+        <label class="tempo"><span class="keylabel"><span id="tempoval">${b.tempo}</span> bpm</span>
+          <input type="range" min="${TEMPO_RANGE[0]}" max="${TEMPO_RANGE[1]}" step="1" value="${b.tempo}" data-range="tempo" aria-label="Tempo in beats per minute"></label>
+        <span class="keylabel">Bars per chord</span>
+        ${opts('btbars', BARS_OPTIONS.map((n) => [String(n), String(n)]), String(b.bars))}
+      </section>
+      <p class="btnow" id="bt-now">${btNowHTML()}</p>
+      <div class="boardwrap" id="bt-board">${btBoard()}</div>
+      <div class="actions">${btn('btplay', b.playing ? 'Stop' : 'Play', 'primary')}</div>
+    </main>`;
+  },
+
   settings() {
     const seg = (key, opts) => `<div class="seg" role="radiogroup">${opts.map(([v, label]) =>
       `<button role="radio" aria-checked="${S.settings[key] === v}" class="${S.settings[key] === v ? 'on' : ''}" data-action="set" data-arg="${key}:${v}" data-focus-key="set-${key}-${v}">${label}</button>`).join('')}</div>`;
@@ -352,6 +391,7 @@ function promptText() {
 
 function go(screen) {
   clearTimer();
+  btStop();
   stopAll();
   if (screen !== 'settings') S.confirmReset = false;
   S.screen = screen;
@@ -516,7 +556,142 @@ function tapDot(d, pos = null) {
     timer = setTimeout(() => { S.states = {}; render(); }, 600);
   } else if (S.screen === 'play') {
     answer(d, false, pos);
+  } else if (S.screen === 'backing' && pos) {
+    btTap(pos);
   }
+}
+
+// ---------- backing track ----------
+
+const btChords = () => S.bt.slots.map((n) => chordByNumeral(S.bt.mode, n));
+const btSettled = () => ({ key: S.bt.key, mode: S.bt.mode, slots: S.bt.slots, tempo: S.bt.tempo, bars: S.bt.bars });
+const btTimers = new Set();
+const ALL_SAMPLE_MIDIS = Array.from({ length: MAX_MIDI - MIN_MIDI + 1 }, (_, i) => MIN_MIDI + i);
+
+/** The chord whose tones the fretboard emphasises: the one playing, else the slot being edited. */
+const btShown = () => btChords()[S.bt.playing && S.bt.cur != null ? S.bt.cur : S.bt.sel] || btChords()[0];
+
+function btNowHTML() {
+  const { playing, cur, key, mode } = S.bt;
+  const c = playing && cur != null ? btChords()[cur] : null;
+  if (!c) return playing ? 'Starting…' : 'Press Play, or tap a dot to hear the note.';
+  return `<span class="snum">${esc(c.numeral)}</span> ${coloredName(c.root, chordName(c, key, mode))}`;
+}
+
+/** The scale across the first twelve frets, the current chord's tones emphasised and the rest dimmed. */
+function btBoard() {
+  const { key, mode, flash } = S.bt;
+  const shown = btShown();
+  const tones = new Set(chordPcs(shown));
+  const dots = [];
+  for (let st = 0; st < 6; st++) {
+    for (let f = 0; f <= 12; f++) {
+      const pc = (((OPEN[st] + f - key) % 12) + 12) % 12;
+      if (SCALES[mode].includes(pc) || tones.has(pc)) dots.push({ id: pc, pos: [st, f] });
+    }
+  }
+  const states = {};
+  for (const { id } of dots) states[id] = tones.has(id) ? 'chord' : 'dim';
+  const label = (id) => (S.settings.labels === 'letters' ? letterName(id, key, mode) : solfegeName(id));
+  return fretboardSVG({
+    dots, frame: { lo: 0, hi: 12 }, labelOf: label, nameOf: solfegeName, vertical: S.vertical,
+    states, posStates: flash ? { [flash]: 'playing' } : {},
+  });
+}
+
+/** Update the live parts of the screen in place (no full render, so a slider drag or focus survives). */
+function btPaint() {
+  if (S.screen !== 'backing') return;
+  document.querySelectorAll('#bt-slots .slot').forEach((el, i) => el.classList.toggle('now', S.bt.playing && S.bt.cur === i));
+  const nowEl = document.getElementById('bt-now');
+  if (nowEl) nowEl.innerHTML = btNowHTML();
+  const board = document.getElementById('bt-board');
+  if (board) board.innerHTML = btBoard();
+  lastHTML = SCREENS.backing();
+}
+
+function btStop() {
+  if (!S.bt.playing && !loopActive()) return;
+  stopLoop();
+  btTimers.forEach(clearTimeout);
+  btTimers.clear();
+  S.bt.playing = false;
+  S.bt.cur = null;
+}
+
+function btStart() {
+  if (!ensureAudio()) return;
+  prerender(ALL_SAMPLE_MIDIS);
+  const { key, tempo, bars } = S.bt;
+  S.bt.playing = true;
+  S.bt.cur = null;
+  startLoop({
+    chords: btChords().map((c) => voicing(c, key)), bpm: tempo, bars,
+    onChord: (index, time) => {
+      const id = setTimeout(() => {
+        btTimers.delete(id);
+        if (!S.bt.playing) return;
+        S.bt.cur = index;
+        btPaint();
+      }, Math.max(0, (time - now()) * 1000));
+      btTimers.add(id);
+    },
+  });
+}
+
+/** After any edit: save it, and restart the loop from the top if it was running. */
+function btChanged() {
+  saveBacking(btSettled());
+  S.bt.sel = Math.min(S.bt.sel, S.bt.slots.length - 1);
+  if (S.bt.playing) { btStop(); btStart(); }
+  render();
+}
+
+function btTap(pos) {
+  if (!ensureAudio()) return;
+  const [st, f] = pos.split(',').map(Number);
+  playNote(OPEN[st] + f, now() + 0.01, 0.9); // over the track: nothing is stopped
+  S.bt.flash = pos;
+  btPaint();
+  const id = setTimeout(() => { btTimers.delete(id); if (S.bt.flash === pos) { S.bt.flash = null; btPaint(); } }, 450);
+  btTimers.add(id);
+}
+
+const BT_ACTIONS = {
+  backing: () => { go('backing'); if (ensureAudio()) prerender(ALL_SAMPLE_MIDIS); },
+  btkey: (arg) => { S.bt.key = Number(arg); btChanged(); },
+  btmode: (arg) => {
+    if (arg === S.bt.mode) return;
+    S.bt.slots = convertSlots(S.bt.slots, S.bt.mode, arg);
+    S.bt.mode = arg;
+    btChanged();
+  },
+  btslot: (arg) => { S.bt.sel = Number(arg); render(); btPaint(); },
+  btchord: (arg) => { S.bt.slots = S.bt.slots.map((n, i) => (i === S.bt.sel ? arg : n)); btChanged(); },
+  btadd: () => {
+    if (S.bt.slots.length >= MAX_SLOTS) return;
+    S.bt.slots = [...S.bt.slots, S.bt.slots[S.bt.sel]];
+    S.bt.sel = S.bt.slots.length - 1;
+    btChanged();
+  },
+  btdel: () => {
+    if (S.bt.slots.length <= MIN_SLOTS) return;
+    S.bt.slots = S.bt.slots.filter((_, i) => i !== S.bt.sel);
+    btChanged();
+  },
+  btpreset: (arg) => { S.bt.slots = [...PRESETS[S.bt.mode][Number(arg)]]; S.bt.sel = 0; btChanged(); },
+  btbars: (arg) => { S.bt.bars = Number(arg); btChanged(); },
+  btplay: () => { if (S.bt.playing) btStop(); else btStart(); render(); },
+};
+
+/** Tempo slider: `input` moves the number live, `change` (on release) applies and saves it. */
+function onRange(e) {
+  const el = e.target.closest?.('[data-range="tempo"]');
+  if (!el) return;
+  S.bt.tempo = Math.max(TEMPO_RANGE[0], Math.min(TEMPO_RANGE[1], Math.round(Number(el.value)) || S.bt.tempo));
+  const val = document.getElementById('tempoval');
+  if (val) val.textContent = S.bt.tempo;
+  if (e.type === 'change') btChanged();
 }
 
 // ---------- microphone ----------
@@ -579,6 +754,7 @@ function onMicNote(midi) {
 // ---------- input ----------
 
 const ACTIONS = {
+  ...BT_ACTIONS,
   home: () => go('home'),
   settings: () => go('settings'),
   stats: () => { S.stats = { agg: loadStats(), log: loadLog(), now: Date.now() }; go('stats'); },
@@ -650,6 +826,7 @@ function onKey(e) {
     ensureAudio();
     if (S.screen === 'explore') startLevel();
     else if (S.screen === 'play') (S.phase === 'feedback' ? advance() : replay());
+    else if (S.screen === 'backing') ACTIONS.btplay();
     else if (S.screen === 'results') {
       const nxt = nextLevel(S.chapterId, S.level);
       if (nxt) ACTIONS.next();
@@ -674,6 +851,11 @@ export function mount(root) {
   });
   document.addEventListener('keydown', onKey);
   window.addEventListener('resize', onResize);
-  document.addEventListener('visibilitychange', () => render());
+  app.addEventListener('input', onRange);
+  app.addEventListener('change', onRange);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') btStop(); // timers throttle in the background; don't let the loop stutter
+    render();
+  });
   render();
 }
