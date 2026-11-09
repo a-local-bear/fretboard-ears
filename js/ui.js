@@ -1,7 +1,7 @@
 // App state, screens and input handling. Full re-render via innerHTML, skipped when nothing changed.
 
 import {
-  OPEN, SCALES, MIN_MIDI, MAX_MIDI, CHAPTERS, ROUNDS, FAMILIES, noteColor, solfegeName, letterName, keyName, keyLetter, degreeIndex,
+  OPEN, SCALES, MIN_MIDI, MAX_MIDI, CHAPTERS, ROUNDS, PASS_SCORE, FAMILIES, noteColor, solfegeName, letterName, keyName, keyLetter, degreeIndex,
   chapterById, levelsFor, buildContext, pickKey, placeChapter, positionsOf, resolutionOf,
 } from './data.js';
 import { buildDeck } from './deck.js';
@@ -13,8 +13,9 @@ import {
 } from './progress.js';
 import {
   loadSettings, saveSettings, loadProgress, saveProgress, loadKey, saveKey, appendLog, requestPersistence,
-  loadStats, loadLog, loadBacking, saveBacking,
+  loadStats, loadLog, loadBacking, saveBacking, loadGuides, saveGuides,
 } from './storage.js';
+import { STAGES, STEPS, levelOf, stepDone, nextStep, pathCount, guideById } from './path.js';
 import {
   streaks, heatmap, totals, degreeAccuracy, topConfusions, triesAfterMiss, avgResponseMs, trend,
 } from './stats.js';
@@ -39,7 +40,7 @@ const MIC_NOTE_LIMIT = 1.6; // seconds the app's notes may ring while the mic li
 const VERTICAL_BELOW = 640;
 
 const S = {
-  screen: 'home', // home | levels | explore | play | listen | results | settings | stats | backing
+  screen: 'home', // home | levels | explore | play | listen | results | settings | stats | backing | path | guide
   chapterId: 'one',
   level: 0, // index into levelsFor(chapterId)
   keyPc: loadKey(), // tonic of the fixed-key levels (0 = C … 11 = B)
@@ -65,6 +66,9 @@ const S = {
   sg: null, // sing-and-find: { pos (note being sung), fails, aided (heard it this note), first[] (sung first try, per note), note (hint) }
   mic: 'off', // off | starting | on | blocked (runtime state; the wish to use it is settings.mic)
   bt: { ...loadBacking(), playing: false, cur: null, sel: 0, flash: null }, // backing track: saved fields + runtime state
+  guides: loadGuides(), // ids of the path guides marked done
+  guideId: null, // the guide open on the guide screen
+  btBack: 'home', // where the backing track's back button goes (a guide opens it with its loop)
   settings: loadSettings(),
   progress: loadProgress(),
   vertical: window.innerWidth < VERTICAL_BELOW,
@@ -159,7 +163,8 @@ const SCREENS = {
     return `${topbar('Fretboard Ears')}
     <main class="screen home">
       <p class="lede">Hear a note in a key, then find it on the neck.</p>
-      <div class="actions">${btn('practise', 'Practise', 'primary')}</div>
+      ${nextUpHTML()}
+      <div class="actions">${btn('practise', 'Daily practice', 'primary')}</div>
       <ol class="chapters">
         ${CHAPTERS.map((c, i) => {
           const played = playedCount(S.progress, c.id);
@@ -170,7 +175,7 @@ const SCREENS = {
           </button></li>`;
         }).join('')}
       </ol>
-      <div class="actions">${btn('backing', 'Backing track', 'ghost')}${btn('stats', 'Practice stats', 'ghost')}</div>
+      <div class="actions">${btn('path', 'Path', 'ghost')}${btn('backing', 'Backing track', 'ghost')}${btn('stats', 'Practice stats', 'ghost')}</div>
     </main>`;
   },
 
@@ -332,6 +337,9 @@ const SCREENS = {
     }).join('');
     const nxt = nextLevel(S.chapterId, S.level);
     const canNext = !!nxt;
+    // On the path and moved past this level: point at the next step.
+    const step = STEPS.some((st) => st.kind === 'level' && st.id === level().id) ? nextStep(S.progress, S.guides) : null;
+    const onPath = step != null && step.id !== level().id;
     return `${topbar(esc(level().name), 'levels', esc(chapter().name))}
     <main class="screen results">
       <p class="keyline">${esc(keyLabel())}</p>
@@ -344,9 +352,10 @@ const SCREENS = {
       ${confusions ? `<h2 class="sub">Mix-ups</h2><ul class="confusions">${confusions}</ul>` : ''}
       <div class="actions">
         ${btn('levels', 'Levels', 'ghost')}
-        ${btn('retry', 'Retry', canNext ? 'ghost' : 'primary')}
-        ${canNext ? btn('next', 'Next level', 'primary') : ''}
+        ${btn('retry', 'Retry', canNext || onPath ? 'ghost' : 'primary')}
+        ${onPath ? btn('pathnext', 'Continue path', 'primary') : canNext ? btn('next', 'Next level', 'primary') : ''}
       </div>
+      ${onPath ? `<p class="hint pathhint">Next on your path: <b>${esc(stepName(step))}</b></p>` : ''}
     </main>`;
   },
 
@@ -442,7 +451,7 @@ const SCREENS = {
     const opts = (action, list, cur) => `<div class="seg" role="radiogroup">${list.map(([v, label]) =>
       `<button role="radio" aria-checked="${cur === v}" class="${cur === v ? 'on' : ''}" data-action="${action}" data-arg="${v}" data-focus-key="${action}-${v}">${label}</button>`).join('')}</div>`;
     const sel = chords[b.sel];
-    return `${topbar('Backing track', 'home')}
+    return `${topbar('Backing track', S.btBack)}
     <main class="screen backing">
       <div class="keybar"><span class="keylabel" id="keylabel">Key</span><div class="keychips" role="group" aria-labelledby="keylabel">${keys}</div>
         ${opts('btmode', [['major', 'Major'], ['minor', 'Minor']], b.mode)}</div>
@@ -470,6 +479,60 @@ const SCREENS = {
     </main>`;
   },
 
+  path() {
+    const nx = nextStep(S.progress, S.guides);
+    const { done, total } = pathCount(S.progress, S.guides);
+    let n = 0;
+    return `${topbar('Path', 'home')}
+    <main class="screen path">
+      <p class="lede">A suggested order through the levels. After each stage, a guide shows how to use the new notes on your guitar. A level counts once you score ${PASS_SCORE}/${ROUNDS}.</p>
+      <p class="keyline">${done}/${total} steps done</p>
+      ${STAGES.map((st, si) => `<section class="family">
+        <h2 class="sub">${si + 1} · ${esc(st.name)}</h2>
+        <p class="hint">${esc(st.desc)}</p>
+        <ol class="steps">${st.steps.map(() => {
+          const step = STEPS[n++];
+          const ok = stepDone(step, S.progress, S.guides);
+          const now = step === nx;
+          const best = step.kind === 'level' ? S.progress.best[step.id] : null;
+          const meta = step.kind === 'guide' ? (ok ? 'Done' : 'Guide') : best == null ? 'Not played' : `Best ${best}/${ROUNDS}`;
+          return `<li><button class="step ${step.kind} ${ok ? 'done' : ''} ${now ? 'now' : ''}" data-action="pathstep" data-arg="${step.n}" data-focus-key="step-${step.n}"${now ? ' aria-current="step"' : ''}>
+            <span class="smark" aria-hidden="true">${ok ? '✓' : now ? '▶' : step.kind === 'guide' ? '◆' : '·'}</span>
+            <span class="cbody"><span class="sname">${esc(stepName(step))}</span>${step.kind === 'level' ? `<span class="cdesc">${esc(chapterById(levelOf(step).chapterId).name)}</span>` : ''}</span>
+            <span class="cmeta">${now ? 'Next' : meta}</span>
+          </button></li>`;
+        }).join('')}</ol>
+      </section>`).join('')}
+    </main>`;
+  },
+
+  guide() {
+    const g = guideById(S.guideId);
+    const ok = S.guides.includes(g.id);
+    const loop = g.loop;
+    const chords = loop ? loop.slots.map((num) => {
+      const c = chordByNumeral(loop.mode, num);
+      return `<span class="slot"><span class="snum">${esc(num)}</span>${coloredName(c.root, chordName(c, loop.key, loop.mode))}</span>`;
+    }).join('') : '';
+    return `${topbar(esc(g.title), 'path', `Guide · stage ${g.stage + 1}`)}
+    <main class="screen guide">
+      <p class="lede">${esc(g.intro)}</p>
+      ${loop ? `<section class="btsec"><h2 class="sub">The loop</h2>
+        <div class="slots">${chords}</div>
+        <p class="hint">${esc(keyName(loop.key, loop.mode))} · ${loop.tempo} bpm · ${loop.bars} bar${loop.bars > 1 ? 's' : ''} per chord</p>
+        <div class="actions">${btn('guideloop', 'Play this loop', 'ghost')}</div>
+      </section>` : ''}
+      <section class="tries"><h2 class="sub">Things to try</h2>
+        <ol>${g.tries.map((t) => `<li>${esc(t)}</li>`).join('')}</ol>
+        <p class="hint">Spend a few minutes on each, as long as it's fun. There is no score: mark it done when you've tried them all.</p>
+      </section>
+      <div class="actions">
+        ${ok ? btn('guideundo', 'Mark not done', 'ghost') : ''}
+        ${btn('guidedone', ok ? 'Continue path' : 'Done, continue', 'primary')}
+      </div>
+    </main>`;
+  },
+
   settings() {
     const seg = (key, opts) => `<div class="seg" role="radiogroup">${opts.map(([v, label]) =>
       `<button role="radio" aria-checked="${S.settings[key] === v}" class="${S.settings[key] === v ? 'on' : ''}" data-action="set" data-arg="${key}:${v}" data-focus-key="set-${key}-${v}">${label}</button>`).join('')}</div>`;
@@ -494,6 +557,34 @@ const SCREENS = {
     </main>`;
   },
 };
+
+/** A path step's short name: the level's title or the guide's. */
+const stepName = (step) => (step.kind === 'guide' ? step.title : levelOf(step).title);
+
+/** Home: the next step of the path, one tap away. */
+function nextUpHTML() {
+  const nx = nextStep(S.progress, S.guides);
+  const { total } = pathCount(S.progress, S.guides);
+  if (!nx) {
+    return `<button class="nextup" data-action="path" data-focus-key="nextup">
+      <span class="keyline">Path complete · ${total}/${total}</span>
+      <span class="sname">Keep going with daily practice</span></button>`;
+  }
+  const where = nx.kind === 'level' ? `${chapterById(levelOf(nx).chapterId).name} · ` : 'Guide · ';
+  return `<button class="nextup" data-action="pathnext" data-focus-key="nextup">
+      <span class="keyline">Next up · step ${nx.n + 1}/${total}</span>
+      <span class="sname">${esc(stepName(nx))}</span>
+      <span class="cdesc">${esc(where)}stage ${nx.stage + 1}, ${esc(STAGES[nx.stage].name)}</span></button>`;
+}
+
+/** Open a path step: a level's explore screen, or a guide. */
+function openStep(step) {
+  if (!step) return go('path');
+  if (step.kind === 'guide') { S.guideId = step.id; return go('guide'); }
+  const l = levelOf(step);
+  S.chapterId = l.chapterId;
+  openLevel(l.idx);
+}
 
 /** The round's target as large coloured text; the note being sung or found is marked. */
 function targetHTML() {
@@ -1134,7 +1225,7 @@ function btTap(pos) {
 }
 
 const BT_ACTIONS = {
-  backing: () => { go('backing'); if (ensureAudio()) prerender(ALL_SAMPLE_MIDIS); },
+  backing: () => { S.btBack = 'home'; go('backing'); if (ensureAudio()) prerender(ALL_SAMPLE_MIDIS); },
   btkey: (arg) => { S.bt.key = Number(arg); btChanged(); },
   btmode: (arg) => {
     if (arg === S.bt.mode) return;
@@ -1238,6 +1329,24 @@ const ACTIONS = {
   practise: () => startSession(),
   stats: () => { S.stats = { agg: loadStats(), log: loadLog(), now: Date.now() }; go('stats'); },
   levels: () => go('levels'),
+  path: () => go('path'),
+  pathstep: (arg) => openStep(STEPS[Number(arg)]),
+  pathnext: () => openStep(nextStep(S.progress, S.guides)),
+  guide: () => go('guide'),
+  guidedone: () => {
+    if (!S.guides.includes(S.guideId)) { S.guides = [...S.guides, S.guideId]; saveGuides(S.guides); }
+    go('path');
+  },
+  guideundo: () => { S.guides = S.guides.filter((id) => id !== S.guideId); saveGuides(S.guides); render(); },
+  guideloop: () => {
+    const { key, mode, slots, tempo, bars } = guideById(S.guideId).loop;
+    Object.assign(S.bt, { key, mode, slots: [...slots], tempo, bars, sel: 0 });
+    saveBacking(S.bt);
+    S.btBack = 'guide';
+    go('backing');
+    btStart();
+    render();
+  },
   chapter: (arg) => { S.chapterId = arg; go('levels'); },
   level: (arg) => openLevel(Number(arg)),
   key: (arg) => { S.keyPc = Number(arg); saveKey(S.keyPc); render(); },
@@ -1281,6 +1390,8 @@ const ACTIONS = {
       S.confirmReset = false;
       S.progress = { best: {} };
       saveProgress(S.progress);
+      S.guides = [];
+      saveGuides(S.guides);
     }
     render();
   },
