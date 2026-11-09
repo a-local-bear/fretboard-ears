@@ -213,6 +213,7 @@ export const FAMILIES = {
   random: { name: 'Random key', mode: null, chromatic: false },
   pairs: { name: 'Degree pairs', mode: 'major', chromatic: false },
   dictation: { name: 'Dictation', mode: 'major', chromatic: false },
+  sing: { name: 'Sing and find', mode: 'major', chromatic: false },
 };
 
 /** Note ranges as semitone spans above the tonic. `to: Infinity` runs to the top of the samples. */
@@ -267,6 +268,13 @@ function levelsOf(chapter) {
   LENGTH_NAMES.forEach((w, i) => add('dictation', { id: `${ch}-dict-${i + 2}`, len: i + 2, from: 0, to: 12, name: `${w} notes` }));
   add('dictation', { id: `${ch}-dict-minor`, len: 4, from: 0, to: 12, mode: 'minor', name: 'Minor, four notes' });
   add('dictation', { id: `${ch}-dict-rk`, len: 4, from: 0, to: 12, mode: 'major', random: 'major', name: 'Random key, four notes' });
+  // Sing and find: the target is shown as text; sing it, then find it (single degrees, then phrases).
+  add('sing', { id: `${ch}-sing-1`, from: 0, to: 4, name: 'Do · Re · Mi' });
+  add('sing', { id: `${ch}-sing-2`, from: 0, to: 7, name: 'Do – Sol' });
+  add('sing', { id: `${ch}-sing-oct`, from: 0, to: 12, name: 'Whole octave' });
+  add('sing', { id: `${ch}-sing-p2`, len: 2, from: 0, to: 12, name: 'Two notes' });
+  add('sing', { id: `${ch}-sing-p3`, len: 3, from: 0, to: 12, name: 'Three notes' });
+  add('sing', { id: `${ch}-sing-rk`, len: 3, from: 0, to: 12, mode: 'major', random: 'major', name: 'Random key, three notes' });
   return out.map((l, idx) => ({ ...l, idx }));
 }
 

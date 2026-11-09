@@ -259,6 +259,19 @@ button { font: inherit; color: inherit; }
 .confusions.blocks li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: baseline; }
 .confusions.blocks .keyline { grid-column: 1 / -1; text-align: left; }
 .confusions.blocks b { color: var(--ink); font-variant-numeric: tabular-nums; }
+/* ---------- sing and find ---------- */
+.target { margin: 0; text-align: center; font: 700 56px/1.15 var(--display); letter-spacing: -0.03em; text-wrap: balance; }
+.target .tnote { opacity: 0.4; }
+.target .tnote.cur { opacity: 1; }
+.target .tnote.past { opacity: 0.7; }
+.target .tsep { color: var(--muted); font-size: 0.5em; font-weight: 400; }
+.voicelive { margin: 0; min-height: 1.6em; text-align: center; font: 700 22px/1.6 var(--display); color: var(--muted); }
+.voicelive .cue { font-weight: 500; color: var(--muted); }
+.voicelive .cue.good { color: var(--ok); }
+.voicelive .holddots { color: var(--ok); letter-spacing: 0.15em; }
+.micstate { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; color: var(--muted); font: 500 11.5px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; }
+.micstate.on { color: var(--accent); }
+@media (max-width: 639px) { .target { font-size: 44px; } }
 /* ---------- backing track ---------- */
 .backing .keybar { gap: 12px; }
 .btsec { display: flex; flex-direction: column; gap: 10px; align-items: center; }

@@ -20,8 +20,8 @@ test('level ids are unique and the original ones are kept', () => {
 });
 
 test('every pattern chapter has the same level families; the neck adds octave levels', () => {
-  assert.equal(levelsFor('pA').length, 29);
-  assert.equal(levelsFor('neck').length, 33);
+  assert.equal(levelsFor('pA').length, 35);
+  assert.equal(levelsFor('neck').length, 39);
   for (const f of ['major', 'majorChrom', 'minor', 'minorChrom', 'random']) {
     assert.ok(levelsFor('neck').some((l) => l.family === f), f);
   }
