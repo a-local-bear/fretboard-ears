@@ -6,7 +6,7 @@ import { addEntry, buildStats, validStats } from './stats.js';
 
 const KEYS = { settings: 'fe-settings', progress: 'fe-progress', log: 'fe-log', stats: 'fe-stats', key: 'fe-key', backing: 'fe-backing' };
 const LOG_MAX = 5000;
-const DEFAULT_SETTINGS = { labels: 'solfege', ref: 'cadence', refWhen: 'each', resolve: 'on', over: 'off', sound: 'guitar', mic: false };
+const DEFAULT_SETTINGS = { labels: 'solfege', ref: 'cadence', refWhen: 'each', resolve: 'on', over: 'off', sound: 'guitar', mic: false, adaptive: 'off' };
 
 function read(key) {
   try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
@@ -25,6 +25,7 @@ export function loadSettings() {
     over: OVER_OPTIONS.includes(s.over) ? s.over : DEFAULT_SETTINGS.over,
     sound: ['guitar', 'synth'].includes(s.sound) ? s.sound : DEFAULT_SETTINGS.sound,
     mic: s.mic === true,
+    adaptive: ['on', 'off'].includes(s.adaptive) ? s.adaptive : DEFAULT_SETTINGS.adaptive,
   };
 }
 export const saveSettings = (s) => write(KEYS.settings, s);

@@ -54,7 +54,7 @@ function bigDeck(pool, rounds, rng) {
  * Random order of `items` with no value three times in a row. Picks each next item at random,
  * weighted by how many of that value remain, and backtracks when stuck. Null if impossible.
  */
-function arrange(items, rng) {
+export function arrange(items, rng) {
   const counts = new Map();
   for (const v of items) counts.set(v, (counts.get(v) || 0) + 1);
   const out = [];

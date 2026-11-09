@@ -6,6 +6,8 @@ import {
 } from './data.js';
 import { buildDeck } from './deck.js';
 import { buildSequenceDeck } from './phrase.js';
+import { noteWeights, buildAdaptiveDeckFor } from './adaptive.js';
+import { planSession, blockLabel } from './session.js';
 import {
   isPassed, bestScore, recordScore, nextLevel, playedCount,
 } from './progress.js';
@@ -57,6 +59,7 @@ const S = {
   stats: null, // snapshot for the stats screen, taken when it opens
   result: null, // { score, newBest, passed }
   confirmReset: false,
+  session: null, // daily practice: { plan, i, scores: [{ label, name, score }], streak?, done? } while one is running
   mic: 'off', // off | starting | on | blocked (runtime state; the wish to use it is settings.mic)
   bt: { ...loadBacking(), playing: false, cur: null, sel: 0, flash: null }, // backing track: saved fields + runtime state
   settings: loadSettings(),
@@ -142,6 +145,7 @@ const SCREENS = {
     return `${topbar('Fretboard Ears')}
     <main class="screen home">
       <p class="lede">Hear a note in a key, then find it on the neck.</p>
+      <div class="actions">${btn('practise', 'Practise', 'primary')}</div>
       <ol class="chapters">
         ${CHAPTERS.map((c, i) => {
           const played = playedCount(S.progress, c.id);
@@ -225,8 +229,9 @@ const SCREENS = {
       const cls = n ? (n.heard === n.answered ? 'ok' : 'bad') : i === S.pos && S.phase !== 'feedback' ? 'now' : '';
       return `<i class="${cls}"></i>`;
     }).join('')}</div>`;
-    return `${topbar(esc(level().name), 'levels', esc(chapter().name))}
+    return `${topbar(esc(level().name), S.session ? 'home' : 'levels', esc(chapter().name))}
     <main class="screen play">
+      ${S.session ? `<p class="keyline">${esc(blockLabel(S.session.i, S.session.plan))}</p>` : ''}
       <div class="roundbar" aria-label="Round ${Math.min(S.round + 1, ROUNDS)} of ${ROUNDS}, ${score} correct">
         <span class="pips">${pips}</span>
         <span class="count">${Math.min(S.round + 1, ROUNDS)}/${ROUNDS}</span>
@@ -269,6 +274,24 @@ const SCREENS = {
         ${btn('levels', 'Levels', 'ghost')}
         ${btn('retry', 'Retry', canNext ? 'ghost' : 'primary')}
         ${canNext ? btn('next', 'Next level', 'primary') : ''}
+      </div>
+    </main>`;
+  },
+
+  summary() {
+    const { scores, streak } = S.session;
+    const total = scores.reduce((s, b) => s + b.score, 0);
+    return `${topbar('Session done', 'home')}
+    <main class="screen results">
+      <div class="scorecard pass">
+        <p class="big"><b>${total}</b>/${scores.length * ROUNDS}</p>
+        <p class="verdict">${streak} day streak</p>
+      </div>
+      <ul class="confusions blocks">${scores.map((b, i) => `<li><span class="keyline">${i + 1}/${scores.length} · ${esc(b.label)}</span>
+        <span class="bname">${esc(b.name)}</span><b>${b.score}/${ROUNDS}</b></li>`).join('')}</ul>
+      <div class="actions">
+        ${btn('home', 'Home', 'ghost')}
+        ${btn('practise', 'Another session', 'primary')}
       </div>
     </main>`;
   },
@@ -390,6 +413,8 @@ const SCREENS = {
         <p class="hint">The cadence plays first as usual, then the note sounds over a random chord, so you hear how the same note changes colour with the harmony. The cadence replaces a drone or Do reference. Each answer is logged with its chord.</p></section>
       <section><h2 class="sub">Resolve to Do</h2>${seg('resolve', [['on', 'On'], ['off', 'Off']])}
         <p class="hint">After a correct answer, hear the note walk stepwise to the nearest Do.</p></section>
+      <section><h2 class="sub">Adaptive practice</h2>${seg('adaptive', [['off', 'Off'], ['on', 'On']])}
+        <p class="hint">On deals weak, slow and confused notes more often. Mastered notes still appear.</p></section>
       <section><h2 class="sub">Sound</h2>${seg('sound', [['guitar', 'Electric guitar'], ['synth', 'Synth']])}
         <p class="hint">Electric guitar uses recorded notes. Synth is the original plucked-string sound.</p></section>
       <section><h2 class="sub">Progress</h2>
@@ -425,6 +450,7 @@ function go(screen) {
   btStop();
   stopAll();
   if (screen !== 'settings') S.confirmReset = false;
+  if (screen !== 'play') S.session = null; // leaving a session ends it; per-level progress is already saved
   S.screen = screen;
   S.states = {};
   S.posStates = {};
@@ -446,12 +472,58 @@ function openLevel(index) {
   if (ensureAudio()) prerender([...levelMidis(), ...cadenceMidis(), ...overMidis()]);
 }
 
+/** The deck for the level in S.ctx: weighted by the player's stats when adaptive, else the plain rules. */
+function makeDeck(adaptive) {
+  const lv = level();
+  if (adaptive) {
+    const weights = noteWeights(loadStats(), degrees(), { log: loadLog() });
+    return buildAdaptiveDeckFor(lv, degrees(), weights, ROUNDS, S.ctx.mode);
+  }
+  return lv.len > 1 ? buildSequenceDeck(lv, degrees(), ROUNDS, S.ctx.mode) : buildDeck(degrees(), ROUNDS);
+}
+
 function startLevel() {
-  S.deck = level().len > 1 ? buildSequenceDeck(level(), degrees(), ROUNDS, S.ctx.mode) : buildDeck(degrees(), ROUNDS);
+  S.deck = makeDeck(S.settings.adaptive === 'on');
   S.round = 0;
   S.answers = [];
   S.screen = 'play';
   startRound();
+}
+
+/** Daily practice: plan the blocks from progress and stats, then play them back to back. */
+function startSession() {
+  const log = loadLog();
+  const plan = planSession({ progress: S.progress, stats: loadStats(), log });
+  S.session = { plan, i: 0, scores: [] };
+  startSessionBlock(0);
+}
+
+function startSessionBlock(i) {
+  const b = S.session.plan[i];
+  S.session.i = i;
+  S.chapterId = b.chapterId;
+  S.level = b.level;
+  const { keyPc, mode } = pickKey(level(), b.keyPc ?? S.keyPc);
+  S.ctx = buildContext(S.chapterId, level(), keyPc, mode);
+  if (ensureAudio()) prerender([...levelMidis(), ...cadenceMidis()]);
+  S.deck = makeDeck(b.adaptive || S.settings.adaptive === 'on');
+  S.round = 0;
+  S.answers = [];
+  S.screen = 'play';
+  startRound();
+}
+
+/** A block of the session is done: next block straight away, or the summary after the last. */
+function sessionAdvance(score) {
+  const ss = S.session;
+  ss.scores.push({ label: ss.plan[ss.i].label, name: `${chapter().name} · ${level().name}`, score });
+  if (ss.i + 1 < ss.plan.length) return startSessionBlock(ss.i + 1);
+  ss.streak = streaks(loadStats().days, Date.now()).current;
+  S.screen = 'summary';
+  S.states = {};
+  stopAll();
+  render();
+  window.scrollTo(0, 0);
 }
 
 function startRound() {
@@ -588,6 +660,7 @@ function advance() {
   const { progress, newBest } = recordScore(S.progress, S.chapterId, S.level, score);
   S.progress = progress;
   saveProgress(progress);
+  if (S.session) return sessionAdvance(score);
   S.result = { score, newBest, passed: isPassed(score) };
   S.screen = 'results';
   S.states = {};
@@ -818,6 +891,7 @@ const ACTIONS = {
   ...BT_ACTIONS,
   home: () => go('home'),
   settings: () => go('settings'),
+  practise: () => startSession(),
   stats: () => { S.stats = { agg: loadStats(), log: loadLog(), now: Date.now() }; go('stats'); },
   levels: () => go('levels'),
   chapter: (arg) => { S.chapterId = arg; go('levels'); },
