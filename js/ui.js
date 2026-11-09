@@ -452,6 +452,9 @@ const ACTIONS = {
 function onClick(e) {
   const el = e.target.closest('[data-action]');
   if (!el || !app.contains(el) || el.disabled) return;
+  // Mouse/touch clicks have detail > 0; keyboard-activated ones have 0. Drop focus after a pointer
+  // click so Space/Enter act on the screen rather than re-pressing this button.
+  if (e.detail > 0) el.blur();
   ensureAudio();
   requestPersistence();
   ACTIONS[el.dataset.action]?.(el.dataset.arg, el);
