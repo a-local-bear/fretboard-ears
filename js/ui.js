@@ -245,7 +245,7 @@ const SCREENS = {
         ? 'The microphone is blocked, so the app cannot hear you sing. Allow it for this site in your browser settings, then try again, or use self-check below.'
         : !micSupported() ? 'The microphone is not available here (it needs a secure https page and a browser that allows it).' : '';
       return `${topbar(esc(level().name), 'levels', esc(chapter().name))}
-    <main class="screen explore">
+    <main class="screen explore fit">
       <p class="keyline">${esc(keyLabel())}</p>
       ${pathTip()}
       <p class="lede">${intro} Each round shows ${level().len > 1 ? `${level().len} notes` : 'a note'} as text and plays none. <b>Sing</b> ${level().len > 1 ? 'them one by one' : 'it'} (any octave), then <b>find</b> ${level().len > 1 ? 'them' : 'it'} on the neck by tapping or playing. Tap the dots to hear each note first.</p>
@@ -262,7 +262,7 @@ const SCREENS = {
     const phrase = level().len > 1 ? `Each round plays ${level().len} notes in a row: play them back one by one, in order.` : '';
     const where = S.ctx.positions.get(newest).length > 1 ? 'Every position of a note counts as that note.' : '';
     return `${topbar(esc(level().name), 'levels', esc(chapter().name))}
-    <main class="screen explore">
+    <main class="screen explore fit">
       <p class="keyline">${esc(keyLabel())}</p>
       ${pathTip()}
       <p class="lede">${intro} ${where} ${phrase} ${S.mic === 'on' ? 'Tap the dots to hear each one, or play them to check the mic hears you' : 'Tap the dots to hear each one'}, then start.</p>
@@ -292,7 +292,7 @@ const SCREENS = {
       return `<i class="${cls}"></i>`;
     }).join('')}</div>`;
     return `${topbar(esc(level().name), S.session ? 'home' : 'levels', esc(chapter().name))}
-    <main class="screen play">
+    <main class="screen play fit">
       ${S.session ? `<p class="keyline">${esc(blockLabel(S.session.i, S.session.plan))}</p>` : ''}
       <div class="roundbar" aria-label="Round ${Math.min(S.round + 1, ROUNDS)} of ${ROUNDS}, ${score} correct">
         <span class="pips">${pips}</span>
@@ -329,7 +329,7 @@ const SCREENS = {
     const seg = (key, opts) => `<div class="seg" role="radiogroup">${opts.map(([v, label]) =>
       `<button role="radio" aria-checked="${S.settings[key] === v}" class="${S.settings[key] === v ? 'on' : ''}" data-action="set" data-arg="${key}:${v}" data-focus-key="set-${key}-${v}">${label}</button>`).join('')}</div>`;
     return `${topbar(esc(level().name), 'explore', esc(chapter().name))}
-    <main class="screen play listen">
+    <main class="screen play listen fit">
       <p class="keyline">${esc(keyLabel())} · round ${ls.n} · not scored</p>
       <p class="prompt" aria-live="polite">${text}</p>
       <div class="boardwrap">${board({ states: S.states, disabled: true })}</div>

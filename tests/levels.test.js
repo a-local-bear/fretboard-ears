@@ -63,8 +63,17 @@ test('C major reproduces the original chapter notes exactly', () => {
     assert.deepEqual(ctx.pool.map((o) => ctx.positions.get(o)[0]), c.notes, c.id);
     assert.equal(ctx.tonic, midiOf(c.notes[0]));
     const [lo, hi] = [Math.min(...c.notes.map((n) => n[1])), Math.max(...c.notes.map((n) => n[1]))];
-    assert.deepEqual(ctx.frame, { lo: Math.max(0, lo - 1), hi: hi + 1 });
+    assert.deepEqual(ctx.frame, { lo: Math.max(0, lo - 1), hi }, 'the frame hugs the notes');
   }
+});
+
+test('the drawn frame covers only the frets a level uses', () => {
+  const two = buildContext('one', levelsFor('one')[0], 0, 'major'); // Do and Sol on the B string: frets 1 and 8
+  assert.deepEqual(two.frame, { lo: 0, hi: 8 });
+  const close = buildContext('pA', { notes: [0, 2], chromatic: false }, 0, 'major'); // frets 3 and 5
+  assert.ok(close.frame.hi - close.frame.lo >= 4, 'never narrower than four frets');
+  assert.ok(close.frame.lo <= 2 && close.frame.hi >= 5);
+  assert.ok(buildContext('neck', { notes: [0, 4, 7], chromatic: false }, 0, 'major').frame.hi <= 12);
 });
 
 test('patterns transpose to every key within the neck and the recorded samples', () => {

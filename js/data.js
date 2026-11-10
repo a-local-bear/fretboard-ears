@@ -307,9 +307,29 @@ export function pickKey(level, keyPc, rng = Math.random) {
   };
 }
 
+const MIN_CELLS = 4;
+
+/**
+ * The fret columns to draw for the notes of a level: just the frets they use (so a phone shows a
+ * short board, not the whole pattern), widened to MIN_CELLS inside the placement's own window.
+ * A dot on fret `lo` sits before the first wire, as an open string does before the nut.
+ */
+export function frameOf(place, positions) {
+  if (!positions.length) return place.frame;
+  const frets = positions.map(([, f]) => f);
+  let lo = Math.max(0, Math.min(...frets) - 1);
+  let hi = Math.max(...frets);
+  while (hi - lo < MIN_CELLS) {
+    if (hi < place.frame.hi) hi++;
+    else if (lo > 0) lo--;
+    else hi++;
+  }
+  return { lo, hi };
+}
+
 /**
  * Everything the UI needs to run a level in a key: the ascending note ids (`pool`, offsets from the
- * tonic), their fretboard positions, the fret frame, and the cadence.
+ * tonic), their fretboard positions, the fret frame around them, and the cadence.
  * `multiOctave` is true when notes of the same name occur in several octaves.
  */
 export function buildContext(chapterId, level, keyPc, mode) {
@@ -327,7 +347,7 @@ export function buildContext(chapterId, level, keyPc, mode) {
     positions.set(o, pos);
   }
   return {
-    chapterId, level, keyPc, mode, tonic: place.tonic, frame: place.frame, pool, positions,
+    chapterId, level, keyPc, mode, tonic: place.tonic, frame: frameOf(place, [...positions.values()].flat()), pool, positions,
     multiOctave: pool[pool.length - 1] - pool[0] > 12, cadence: cadenceFor(keyPc, mode),
   };
 }

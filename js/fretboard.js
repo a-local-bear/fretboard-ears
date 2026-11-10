@@ -21,10 +21,14 @@ export function fretboardSVG({ dots, frame, labelOf, nameOf, hidden = false, ver
   const cells = hi - lo;
 
   // Geometry in viewBox units. "along" = direction of the neck, "across" = strings.
-  const cell = vertical ? 64 : 76;
+  // A long vertical board gets shorter fret cells, so it stays tappable when fitted to a phone screen.
+  const cell = vertical ? (cells > 8 ? 50 : 64) : 76;
   const gap = vertical ? 50 : 38;
   const padAcross = vertical ? 30 : 36;
-  const padAlongStart = vertical ? 34 : 40;
+  const r = vertical ? 17 : 15.5;
+  // Dots on fret `lo` (open strings, when lo is 0) sit before the first wire: leave them room.
+  const before = dots.some(({ pos }) => pos[1] === lo);
+  const padAlongStart = before ? cell / 2 + r + 26 : vertical ? 34 : 40;
   const padAlongEnd = 14;
   const labelBand = 24;
   const boardAlong = cells * cell;
@@ -40,7 +44,6 @@ export function fretboardSVG({ dots, frame, labelOf, nameOf, hidden = false, ver
   const stringAcross = (s) => across0 + (vertical ? s : 5 - s) * gap;
   const wireAlong = (f) => along0 + (f - lo) * cell;
   const cellAlong = (f) => wireAlong(f) - cell / 2;
-  const r = vertical ? 17 : 15.5;
   const fnum = (n) => Math.round(n * 10) / 10;
 
   let s = `<svg class="fretboard ${vertical ? 'vertical' : 'horizontal'}" viewBox="0 0 ${W} ${H}" role="group" aria-label="Fretboard">`;
@@ -78,7 +81,7 @@ export function fretboardSVG({ dots, frame, labelOf, nameOf, hidden = false, ver
     const [x1, y1] = P(along0, c);
     const [x2, y2] = P(along0 + boardAlong, c);
     s += `<line class="string" stroke-width="${(1.8 - st * 0.2).toFixed(2)}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
-    const [lx, ly] = vertical ? P(along0 - 18, c) : P(along0 - 22, c);
+    const [lx, ly] = P(before ? 10 : along0 - (vertical ? 18 : 22), c);
     s += `<text class="sname" x="${lx}" y="${ly}">${STRING_NAMES[st]}</text>`;
   }
 
