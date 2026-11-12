@@ -10,7 +10,8 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PATTERNS = ['index.html', 'style.css', 'manifest.webmanifest', 'js/*.js', 'fonts/*.woff2', 'icons/*.png', 'samples/*/*.mp3']
+PATTERNS = ['index.html', 'style.css', 'manifest.webmanifest', 'js/*.js', 'fonts/*.woff2', 'icons/*.png', 'samples/*/*.mp3',
+            'songcraft/index.html', 'songcraft/style.css', 'songcraft/js/*.js']
 
 
 def main():

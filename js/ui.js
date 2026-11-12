@@ -46,7 +46,7 @@ const MIC_NOTE_LIMIT = 1.6; // seconds the app's notes may ring while the mic li
 const VERTICAL_BELOW = 640;
 
 const S = {
-  screen: 'home', // home | levels | explore | play | listen | results | settings | stats | backing | path | guide | drills | drill | songbook | tune | prog
+  screen: 'menu', // menu | home | levels | explore | play | listen | results | settings | stats | backing | path | guide | drills | drill | songbook | tune | prog
   chapterId: 'one',
   level: 0, // index into levelsFor(chapterId)
   keyPc: loadKey(), // tonic of the fixed-key levels (0 = C … 11 = B)
@@ -167,8 +167,28 @@ const refLabel = () => {
 };
 
 const SCREENS = {
-  home() {
+  /** The site's main menu: the apps that live here. Songcraft is a page of its own. */
+  menu() {
     return `${topbar('Fretboard Ears')}
+    <main class="screen home">
+      <p class="lede">Train your ear, then write your own songs.</p>
+      <ol class="chapters">
+        <li><button class="chapter" data-action="home" data-focus-key="app-ears">
+          <span class="cnum">1</span>
+          <span class="cbody"><span class="cname">Ear training</span><span class="cdesc">Hear a note, a chord or a tune, and find it on the neck</span></span>
+          <span class="cmeta"></span>
+        </button></li>
+        <li><a class="chapter" href="songcraft/" data-focus-key="app-songcraft">
+          <span class="cnum">2</span>
+          <span class="cbody"><span class="cname">Songcraft</span><span class="cdesc">Write chord progressions, and indie, pop and jazzy riffs that fit them</span></span>
+          <span class="cmeta">New</span>
+        </a></li>
+      </ol>
+    </main>`;
+  },
+
+  home() {
+    return `${topbar('Ear training', 'menu')}
     <main class="screen home">
       <p class="lede">Hear a note in a key, then find it on the neck.</p>
       ${nextUpHTML()}
@@ -1859,6 +1879,7 @@ function onMicNote(midi) {
 const ACTIONS = {
   ...BT_ACTIONS,
   home: () => go('home'),
+  menu: () => go('menu'),
   settings: () => go('settings'),
   practise: () => startSession(),
   stats: () => { S.stats = { agg: loadStats(), log: loadLog(), now: Date.now() }; go('stats'); },

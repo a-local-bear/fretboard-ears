@@ -99,6 +99,7 @@ button { font: inherit; color: inherit; }
 .chapters { display: grid; gap: 0; border-top: 1px solid var(--line); }
 .chapter { width: 100%; display: grid; grid-template-columns: 40px 1fr auto; gap: 14px; align-items: center; text-align: left; padding: 18px 4px; border: 0; border-bottom: 1px solid var(--line); background: transparent; cursor: pointer; }
 .chapter:hover .cname { color: var(--accent); }
+a.chapter { text-decoration: none; color: inherit; box-sizing: border-box; }
 .cnum { font: 500 14px/1 var(--mono); letter-spacing: 0.08em; color: var(--accent); }
 .cbody { display: flex; flex-direction: column; }
 .cname { font-weight: 700; font-size: 18px; letter-spacing: -0.01em; }
