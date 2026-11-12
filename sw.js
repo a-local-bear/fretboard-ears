@@ -2,7 +2,7 @@
 // The block between the STAMP markers is rewritten by tools/stamp_version.py; don't edit it by hand.
 
 // STAMP:BEGIN
-const CACHE = 'fe-db7d7f5864';
+const CACHE = 'fe-9e8b08c390';
 const PRECACHE = [
   "./",
   "fonts/jetbrains-mono-latin-wght-normal.woff2",
@@ -74,6 +74,16 @@ const PRECACHE = [
   "samples/eg-clean/74.mp3",
   "samples/eg-clean/75.mp3",
   "samples/eg-clean/76.mp3",
+  "songcraft/index.html",
+  "songcraft/js/engine.js",
+  "songcraft/js/lessons.js",
+  "songcraft/js/main.js",
+  "songcraft/js/riff.js",
+  "songcraft/js/shapes.js",
+  "songcraft/js/song.js",
+  "songcraft/js/theory.js",
+  "songcraft/js/ui.js",
+  "songcraft/style.css",
   "style.css"
 ];
 // STAMP:END
@@ -101,6 +111,8 @@ self.addEventListener('fetch', (event) => {
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     if (req.mode === 'navigate') {
+      // Songcraft is a page of its own; every other address is the single-page ear trainer.
+      if (/\/songcraft\/(index\.html)?$/.test(new URL(req.url).pathname)) return (await cache.match('songcraft/index.html')) || fetch(req);
       return (await cache.match('./', { ignoreSearch: true })) || (await cache.match('index.html')) || fetch(req);
     }
     const hit = await cache.match(req, { ignoreSearch: true });

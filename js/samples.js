@@ -25,14 +25,15 @@ const cache = new Map(); // midi → Promise<entry | null>
 
 /**
  * Fetch, decode and trim one sample. Resolves to { buffer, rate, gain } or null on any failure
- * (the caller then falls back to the synth).
+ * (the caller then falls back to the synth). `base` is the URL of the site root, for pages that
+ * are not at the root themselves.
  */
-export function loadSample(ctx, midi) {
+export function loadSample(ctx, midi, base = '') {
   if (!hasSample(midi)) return Promise.resolve(null);
   if (!cache.has(midi)) {
     cache.set(midi, (async () => {
       try {
-        const res = await fetch(sampleUrl(midi));
+        const res = await fetch(base + sampleUrl(midi));
         if (!res.ok) throw new Error(res.status);
         const decoded = await ctx.decodeAudioData(await res.arrayBuffer());
         // Peak over all channels; trim the MP3 encoder's leading silence so chords stay in time.
