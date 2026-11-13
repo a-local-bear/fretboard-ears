@@ -57,7 +57,7 @@ test('a locked lesson explains itself; the first lesson starts from the map', as
   note();
 });
 
-test('a flawless first lesson: teaching cards, every exercise type, results, saving', async () => {
+test('a flawless first lesson: teaching cards, single notes and phrases, results, saving', async () => {
   const kinds = new Set();
   for (let guard = 0; session.active && guard < 100; guard++) {
     kinds.add(session.active.current.type);
@@ -67,7 +67,7 @@ test('a flawless first lesson: teaching cards, every exercise type, results, sav
     await app.proceed();
   }
   env.assertNoErrors();
-  for (const k of ['intro', 'mcq', 'name', 'find', 'pickStaff', 'fretToStaff', 'fretToName', 'phrase']) assert.ok(kinds.has(k), `lesson one includes a ${k} exercise`);
+  assert.deepEqual([...kinds].sort(), ['find', 'intro', 'phrase'], 'lesson one is cards, single notes and phrases');
   assert.match(need('.results h1').textContent, /Flawless/);
   assert.match(need('.hero-xp').textContent, /\+15/);
   assert.match(need('.results').textContent, /1 day streak/);
@@ -111,8 +111,7 @@ test('a lesson with many mistakes still completes; there are no hearts', async (
   await click('.results .continue');
   await go('/lesson/u1-3');
   const again = await playLesson();
-  assert.ok(again.filter((x) => x === 'rhythmTap').length >= 4, `rhythm lesson has tapping (${again})`);
-  assert.ok(again.includes('rhythmHear'));
+  assert.ok(again.filter((x) => x === 'rhythmTap').length >= 5 && again.every((x) => x === 'intro' || x === 'rhythmTap'), `rhythm lesson is all rhythms (${again})`);
   assert.match(need('.results h1').textContent, /Flawless/);
   assert.equal(store.state.lessons['u1-3'].stars, 3);
   await click('.results .continue');
@@ -120,9 +119,10 @@ test('a lesson with many mistakes still completes; there are no hearts', async (
 
 test('badly timed taps are caught', async () => {
   await go('/lesson/u1-3');
+  let played = 0;
   for (let guard = 0; session.active && guard < 60; guard++) {
     const ex = session.active.current;
-    if (ex.type === 'rhythmTap') {
+    if (ex.type === 'rhythmTap' && played++ === 1) { // the second rhythm is tapped badly
       await app.answer(false);
       assert.match(need('.lesson-foot').getAttribute('class'), /is-bad/);
       assert.match(need('.lesson-foot').textContent, /missed|extra|drift/i);
@@ -144,14 +144,14 @@ test('badly timed taps are caught', async () => {
 test('melody lesson, then a song: Mary Had a Little Lamb', async () => {
   await go('/lesson/u1-4');
   const log = await playLesson();
-  assert.ok(log.includes('hearPhrase') && log.filter((x) => x === 'phrase').length >= 5, String(log));
+  assert.ok(log.filter((x) => x === 'phrase').length >= 5 && log.every((x) => x === 'phrase' || x === 'phrase(retry)'), String(log));
   await click('.results .continue');
   for (const id of ['u2-1', 'u2-2']) { await go(`/lesson/${id}`); await playLesson(); await click('.results .continue'); }
   await go('/lesson/u2-3');
   const song = await playLesson({ mistakes: 1 });
   assert.match(need('.results h1').textContent, /You played Mary Had a Little Lamb/);
   assert.match(need('.results').textContent, /First Tune/);
-  assert.ok(song.includes('pairs') === false && song.filter((x) => x.startsWith('phrase')).length >= 5);
+  assert.ok(song.filter((x) => x.startsWith('phrase')).length >= 5);
   note();
   await click('.results .continue');
 });
@@ -204,7 +204,7 @@ test('practice: review round', async () => {
   await go('/review');
   assert.ok(session.active);
   const log = await playLesson();
-  assert.equal(log.length, 12);
+  assert.equal(log.length, 10);
   assert.match(need('.results h1').textContent, /Review complete/);
   await click('.results .continue');
   await settle(30);
@@ -293,11 +293,11 @@ test('coming back the next day extends the streak; skipping a day resets it', as
 
 test('jumping ahead with a placement test', async () => {
   await click('#unit-u4 .jump');
-  assert.match(need('.modal').textContent, /16-question test/);
+  assert.match(need('.modal').textContent, /short test/);
   await click('.start-jump');
   await settle(30);
   let log = await playLesson({ mistakes: 4 });
-  assert.equal(log.filter((x) => !x.includes('retry')).length, 16);
+  assert.equal(log.filter((x) => !x.includes('retry')).length, 10);
   assert.match(need('.results-failed').textContent, /4 mistakes/);
   await click('.retry');
   await settle(30);
@@ -369,8 +369,7 @@ test('every class the app puts on screen has a style rule (or is a known hook)',
   // classes that exist only so scripts and tests can find an element
   const hooks = new Set(['quit', 'continue', 'next', 'start', 'retry', 'go', 'back', 'hear', 'start-lesson', 'start-jump', 'cta-icon',
     'reset-progress', 'play-song', 'stop-song', 'practise-song', 'start-tuner', 'home', 'system', 'clef', 'keysig', 'timesig', 'beam',
-    'staff-line', 'ledger', 'stem', 'barline', 'tie', 'rest', 'btn-primary', 'btn-label', 'ex-intro', 'ex-name', 'ex-find', 'ex-pick', 'ex-fret-staff',
-    'ex-fret-name', 'ex-pairs', 'ex-phrase', 'ex-hear', 'ex-rhythm', 'ex-mcq', 'banner', 'results-failed', 'pair-r', 'option-wide', 'choice-note',
+    'staff-line', 'ledger', 'stem', 'barline', 'tie', 'rest', 'btn-primary', 'btn-label', 'ex-intro', 'ex-name', 'ex-find', 'ex-phrase', 'ex-rhythm', 'banner', 'results-failed', 'choice-note',
     'is-show', 'is-pick', 'is-open', 'is-done', 'is-earned-none', 'practice', 'songs', 'song', 'tuner', 'sprint', 'rhythm-gym', 'profile', 'settings',
     'me', 'ring-goal', 'unit-title', 'link-text', 'results-main', 'fb-cells', 'today-text', 'me-text', 'award', 'day', 'legend', 'unit']);
   const missing = [...seen].filter((c) => !styled.has(c) && !hooks.has(c)).sort();

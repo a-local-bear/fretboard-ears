@@ -1,8 +1,8 @@
 // Settings that belong to this device rather than to a player:
-// whether sound is on, how answers are given here (tap or microphone), theme.
+// whether sound is on, how answers are given here (microphone by default, or the on-screen fretboard), theme.
 
 const KEY = 'fretwise.device';
-const DEFAULTS = { profile: null, standalone: false, sound: true, input: 'tap', theme: 'auto', tapOffset: 0 };
+const DEFAULTS = { profile: null, standalone: false, sound: true, input: 'mic', theme: 'auto', tapOffset: 0 };
 const listeners = new Set();
 let cache = null;
 

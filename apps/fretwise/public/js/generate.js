@@ -3,21 +3,12 @@
 // exercises.js knows how to put each exercise type on screen.
 
 import { makeRng, uniqueBy, clamp } from './util.js';
-import { parseMelody, measureBeats, parseDur, onsets, locate, parsePitch, parsePos, diatonicShift, keySigLetters, keyName } from './theory.js';
+import { parseMelody, measureBeats, parseDur, onsets, locate, parsePos } from './theory.js';
 import { noteStrength } from './progress.js';
 import { noteCard, learnedNotes, LESSONS } from './curriculum.js';
 
 const LETTER_ORDER = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
 const RHYTHM_PITCH = 'G4';
-
-// symbol code -> [beats, name]
-export const SYMBOLS = {
-  w: [4, 'whole note'], h: [2, 'half note'], q: [1, 'quarter note'], e: [0.5, 'eighth note'], s: [0.25, 'sixteenth note'],
-  'h.': [3, 'dotted half note'], 'q.': [1.5, 'dotted quarter note'], ee: [1, 'pair of eighth notes'],
-  rw: [4, 'whole rest'], rh: [2, 'half rest'], rq: [1, 'quarter rest'], re: [0.5, 'eighth rest'],
-};
-const BEAT_LABEL = { 0.25: '¼ beat', 0.5: '½ beat', 1: '1 beat', 1.5: '1½ beats', 2: '2 beats', 3: '3 beats', 4: '4 beats', 5: '5 beats', 6: '6 beats', 8: '8 beats' };
-const BEAT_OPTIONS = { 0.25: [0.25, 0.5, 1, 2], 0.5: [0.25, 0.5, 1, 2], 1: [0.5, 1, 2, 4], 1.5: [1, 1.5, 2, 3], 2: [1, 2, 3, 4], 3: [1, 2, 3, 4], 4: [1, 2, 3, 4] };
 
 // rhythm building blocks: name -> duration codes ("rq" = quarter rest)
 const CELLS = {
@@ -87,60 +78,13 @@ class Generator {
     this.last = n.key;
     return n;
   }
-  fresh() { return this.lesson.learn.length ? this.any(this.lesson.learn) : this.any(); }
-
-  /** other notes to show next to `note`; never the same name / staff position */
-  distractors(note, count, differBy) {
-    const seen = new Set([differBy(note)]);
-    const out = [];
-    const near = this.pool.filter((n) => Math.abs(n.step - note.step) <= 4);
-    for (const cand of [...this.rng.shuffle(near), ...this.rng.shuffle(this.pool)]) {
-      if (out.length >= count) break;
-      if (seen.has(differBy(cand))) continue;
-      seen.add(differBy(cand));
-      out.push(ref(cand));
-    }
-    for (const d of this.rng.shuffle([1, -1, 2, -2, 3, -3])) { // not enough known notes yet: use staff neighbours
-      if (out.length >= count) break;
-      const p = diatonicShift(note.pitch, d);
-      const fake = { pitch: p.id, name: p.letter, nameId: p.letter, step: p.step, key: null };
-      if (p.step < -7 || p.step > 14 || seen.has(differBy({ ...fake, pitch: p }))) continue;
-      seen.add(differBy({ ...fake, pitch: p }));
-      out.push(fake);
-    }
-    return out;
-  }
 
   staffOpts() { return { keySig: this.keySig, range: this.range, explicit: this.explicit }; }
 
   // ---- single-note exercises ---------------------------------------------
-  name(n) {
-    return { type: 'name', note: ref(n), choices: nameChoices(this.rng, n, this.pool, this.keySig), answer: n.nameId, ...this.staffOpts() };
-  }
   find(n) {
     return { type: 'find', note: ref(n), frets: this.frets, ...this.staffOpts() };
   }
-  pickStaff(n) {
-    const options = this.rng.shuffle([ref(n), ...this.distractors(n, 2, (x) => x.nameId)]);
-    return { type: 'pickStaff', target: ref(n), options, answer: options.findIndex((o) => o.pitch === n.pitch.id), ...this.staffOpts() };
-  }
-  fretToStaff(n) {
-    const options = this.rng.shuffle([ref(n), ...this.distractors(n, 2, (x) => x.step)]);
-    return { type: 'fretToStaff', note: ref(n), options, answer: options.findIndex((o) => o.pitch === n.pitch.id), frets: this.frets, ...this.staffOpts() };
-  }
-  fretToName(n) {
-    return { type: 'fretToName', note: ref(n), choices: nameChoices(this.rng, n, this.pool, this.keySig), answer: n.nameId, frets: this.frets };
-  }
-  canPair() { return uniqueBy(this.pool, (n) => n.nameId).length >= 3 || this.pool.length >= 4; }
-  pairs() {
-    const byName = uniqueBy(this.rng.shuffle(this.pool), (n) => n.nameId);
-    const usePlace = byName.length < 3 || (this.pool.length >= 4 && this.rng.chance(0.4));
-    const picked = usePlace
-      ? uniqueBy(this.rng.shuffle(this.pool).sort((a, b) => this.weight(b) - this.weight(a)), (n) => n.pitch.id).slice(0, 4)
-      : byName.sort((a, b) => this.weight(b) - this.weight(a)).slice(0, 4);
-    return { type: 'pairs', mode: usePlace ? 'place' : 'name', notes: this.rng.shuffle(picked).map(ref), ...this.staffOpts() };
-  }
-
   // ---- phrases -----------------------------------------------------------
   /** a stepwise wander through the known notes */
   walk(length, focus = []) {
@@ -195,26 +139,6 @@ class Generator {
     return { type: 'phrase', melody, timeSig: spec.timeSig, bpm: spec.bpm ?? 80, where, frets: this.frets, ...this.staffOpts() };
   }
 
-  /** "which of these did you hear?" — three short phrases that start alike */
-  hear() {
-    const { rng } = this;
-    const length = this.pool.length >= 5 ? 4 : 3;
-    const seen = new Set();
-    const options = [];
-    let start = null, guard = 0;
-    while (options.length < 3 && guard++ < 200) {
-      const w = this.walk(length);
-      if (start && w[0].sounding !== start.sounding) w[0] = start;
-      const sig = w.map((n) => n.pitch.id).join(' ');
-      if (seen.has(sig) || new Set(w.map((n) => n.sounding)).size < 2) continue;
-      seen.add(sig);
-      start ??= w[0];
-      options.push(w.map((n) => `${n.pitch.id}:q`).join(' '));
-    }
-    if (options.length < 3) return this.phrase(4, this.lesson.learn);
-    return { type: 'hearPhrase', options, answer: rng.int(0, 2), bpm: 76, ...this.staffOpts() };
-  }
-
   // ---- rhythm ------------------------------------------------------------
   tap(bars) {
     const spec = this.lesson.rhythm;
@@ -222,210 +146,69 @@ class Generator {
     const melody = spec.patterns ? patternMelody(this.rng, spec, this.usedRhythms) : codesToMelody(rhythmBars(this.rng, spec, bars, this.usedRhythms));
     return { type: 'rhythmTap', melody, timeSig: spec.timeSig, bpm: spec.bpm, counts: spec.counts ?? null };
   }
-  hearRhythm() {
-    const spec = this.lesson.rhythm;
-    const total = measureBeats(spec.timeSig);
-    const bars = total <= 3 ? 2 : 1;
-    const loose = { ...spec, must: null };
-    const options = [];
-    const local = new Set();
-    for (let guard = 0; options.length < 3 && guard < 200; guard++) {
-      // the first option shows off the figure this lesson is about; the others may be anything
-      const melody = spec.patterns ? patternMelody(this.rng, spec, local) : codesToMelody(rhythmBars(this.rng, options.length ? loose : spec, bars, local));
-      if (!options.some((o) => sameOnsets(o, melody))) options.push(melody);
-    }
-    const spare = total === 3 ? ['q q q | h q', 'h q | q q q', 'q h | q q q', 'q q q | q q q'] : ['q q q q', 'h q q', 'q q h', 'h h', 'q h q'];
-    for (const p of spare) {
-      if (options.length >= 3) break;
-      const melody = p.split('|').map((bar) => bar.trim().split(' ').map((c) => `${RHYTHM_PITCH}:${c}`).join(' ')).join(' | ');
-      if (!options.some((o) => sameOnsets(o, melody))) options.push(melody);
-    }
-    const list = this.rng.shuffle(options);
-    return { type: 'rhythmHear', options: list, answer: this.rng.int(0, 2), timeSig: spec.timeSig, bpm: spec.bpm };
+
+  /** a phrase written out note by note: bars is a list of bars, each a list of [note, duration] */
+  written(bars, extra = {}) {
+    const where = [];
+    const melody = bars.map((bar) => bar.map(([n, d]) => { where.push(n.key); return `${n.pitch.id}:${d}`; }).join(' ')).join(' | ');
+    return { type: 'phrase', melody, timeSig: [4, 4], bpm: 76, where, frets: this.frets, ...this.staffOpts(), ...extra };
   }
 
-  // ---- multiple choice ---------------------------------------------------
-  mcq(recipe) {
-    const { rng } = this;
-    const [kind, a, b, c] = recipe;
-    const shuffled = (choices, answerValue, same = (x, y) => x === y) => {
-      const list = rng.shuffle(choices);
-      return { list, answer: list.findIndex((x) => same(x, answerValue)) };
-    };
-    // plausible lengths to choose from, kept to values a beginner has a feel for
-    const beatChoices = (beats) => {
-      const set = BEAT_OPTIONS[beats];
-      return { choices: set.map((v) => ({ label: BEAT_LABEL[v] })), answer: set.indexOf(beats) };
-    };
-    switch (kind) {
-      case 'beats': {
-        const beats = SYMBOLS[a][0];
-        return { type: 'mcq', prompt: `How long does this ${isRestCode(a) ? 'rest' : 'note'} last?`, visual: { symbol: a }, ...beatChoices(beats) };
-      }
-      case 'which': {
-        const { list, answer } = shuffled(b, a);
-        const name = SYMBOLS[a][1];
-        return { type: 'mcq', prompt: `Which one is ${/^[aeiou]/.test(name) ? 'an' : 'a'} ${name}?`, choices: list.map((sym) => ({ symbol: sym })), answer };
-      }
-      case 'name': {
-        const { list, answer } = shuffled(b, a);
-        return { type: 'mcq', prompt: 'What is this called?', visual: { symbol: a }, choices: list.map((sym) => ({ label: cap(SYMBOLS[sym][1]) })), answer };
-      }
-      case 'restFor': {
-        const { list, answer } = shuffled(['rq', 'rh', 'rw'], 'r' + a);
-        return { type: 'mcq', prompt: 'Which rest lasts as long as this note?', visual: { symbol: a }, choices: list.map((sym) => ({ symbol: sym })), answer };
-      }
-      case 'howMany': {
-        const n = SYMBOLS[b][0] / SYMBOLS[a][0];
-        const opts = [...new Set([n, ...rng.shuffle([2, 3, 4, 6, 8].filter((v) => v !== n)).slice(0, 2)])].sort((x, y) => x - y);
-        return { type: 'mcq', prompt: `How many ${SYMBOLS[a][1]}s fit into one ${SYMBOLS[b][1]}?`, visual: { symbols: [a, b] }, choices: opts.map((v) => ({ label: String(v) })), answer: opts.indexOf(n) };
-      }
-      case 'timeTop': {
-        const top = a[0];
-        const bar = Array(top).fill(`${RHYTHM_PITCH}:q`).join(' ');
-        const opts = [2, 3, 4, 6];
-        return { type: 'mcq', prompt: 'How many beats are in each measure of this music?', visual: { staff: { melody: `${bar} | ${bar}`, timeSig: a } }, choices: opts.map((v) => ({ label: String(v) })), answer: opts.indexOf(top) };
-      }
-      case 'tie': {
-        const total = SYMBOLS[a][0] + SYMBOLS[b][0];
-        const opts = [...new Set([total, ...rng.shuffle([2, 3, 4, 5, 6].filter((v) => v !== total)).slice(0, 2), SYMBOLS[a][0]])].sort((x, y) => x - y);
-        return {
-          type: 'mcq', prompt: 'These two notes are tied. How long does the sound last?', visual: { staff: { melody: `${RHYTHM_PITCH}:${a}~ ${RHYTHM_PITCH}:${b}` } },
-          choices: opts.map((v) => ({ label: BEAT_LABEL[v] })), answer: opts.indexOf(total),
-        };
-      }
-      case 'fill': {
-        // a measure with a gap at the end; exactly one of the offered symbols fits
-        const timeSig = b ?? [4, 4];
-        const total = measureBeats(timeSig);
-        let given = c, missing;
-        const offered = a.slice();
-        if (given) missing = total - parseMelody(given)[0].reduce((s, e) => s + e.dur.beats, 0);
-        else {
-          const fit = rng.pick(offered.filter((sym) => SYMBOLS[sym][0] < total));
-          missing = SYMBOLS[fit][0];
-          const lead = [];
-          for (let left = total - missing; left > 0;) { const d = left >= 2 && rng.chance(0.4) ? 'h' : 'q'; lead.push(`${RHYTHM_PITCH}:${d}`); left -= d === 'h' ? 2 : 1; }
-          given = rng.shuffle(lead).join(' ');
-        }
-        const pad = ['q', 'h', 'e', 'w', 'h.'].filter((sym) => SYMBOLS[sym][0] !== missing && !offered.includes(sym));
-        const wrong = uniqueBy([...offered.filter((sym) => SYMBOLS[sym][0] !== missing), ...rng.shuffle(pad)], (sym) => SYMBOLS[sym][0]).slice(0, 2);
-        const right = offered.find((sym) => SYMBOLS[sym][0] === missing) ?? Object.keys(SYMBOLS).find((sym) => SYMBOLS[sym][0] === missing && !isRestCode(sym));
-        const { list, answer } = shuffled([right, ...wrong], right);
-        return {
-          type: 'mcq', prompt: 'This measure is not full yet. Which one completes it?',
-          visual: { staff: { melody: given, timeSig, endBar: 'none' } }, choices: list.map((sym) => ({ symbol: sym })), answer,
-        };
-      }
-      case 'text': {
-        const { list, answer } = shuffled(a.choices.map((label, i) => ({ label, right: i === a.answer })), true, (x) => x.right);
-        return { type: 'mcq', prompt: a.prompt, visual: a.visual ?? null, choices: list.map((x) => ({ label: x.label })), answer };
-      }
-      default: throw new Error(`unknown question recipe "${kind}"`);
-    }
-  }
-
-  mcqHigher() {
-    const n = this.any();
-    const other = this.distractors(n, 1, (x) => x.step)[0];
-    const firstIsTarget = this.rng.chance(0.5);
-    const pair = firstIsTarget ? [n.pitch.id, other.pitch] : [other.pitch, n.pitch.id];
-    const higher = parsePitch(pair[0]).midi > parsePitch(pair[1]).midi ? 0 : 1;
-    return {
-      type: 'mcq', prompt: 'Which note sounds higher?', visual: { staff: { melody: pair.map((p) => `${p}:w`).join(' '), range: this.range } },
-      choices: [{ label: 'The first one' }, { label: 'The second one' }], answer: higher,
-    };
-  }
-  mcqLineSpace() {
-    const n = this.any();
-    return {
-      type: 'mcq', prompt: 'Is this note on a line or in a space?', visual: { staff: { melody: `${n.pitch.id}:w`, range: this.range } },
-      choices: [{ label: 'On a line' }, { label: 'In a space' }], answer: Math.abs(n.step) % 2 === 0 ? 0 : 1,
-    };
-  }
-
-  /** the bar-line rule: what is the highlighted note really? */
-  carry(variant) {
+  /**
+   * The bar-line rule as a phrase to play.  `same`: a sharp/flat is repeated in the same bar without its sign (still
+   * altered); `next`: the plain note comes back after a bar line; `natural`: a natural sign cancels the alteration.
+   */
+  accPhrase(variant) {
     const { rng } = this;
     const altered = this.pool.filter((n) => n.pitch.alter !== 0 && this.pool.some((m) => m.pitch.alter === 0 && m.pitch.letter === n.pitch.letter && m.pitch.octave === n.pitch.octave));
-    const sharp = rng.pick(altered);
+    const sharp = this.any(altered);
     const plain = this.pool.find((m) => m.pitch.alter === 0 && m.pitch.letter === sharp.pitch.letter && m.pitch.octave === sharp.pitch.octave);
     const others = rng.shuffle(this.pool.filter((n) => n.pitch.alter === 0 && n.pitch.letter !== sharp.pitch.letter && Math.abs(n.step - sharp.step) <= 4));
     const [x, y] = [others[0] ?? plain, others[1] ?? others[0] ?? plain];
-    const S = sharp.pitch.id, P = plain.pitch.id;
-    let melody, mark, answer, prompt;
-    if (variant === 'same') { melody = `${S}:q ${x.pitch.id}:q ${S}:q ${y.pitch.id}:q`; mark = 2; answer = sharp.nameId; prompt = 'The highlighted note has no sign of its own. What is it?'; }
-    else if (variant === 'next') { melody = `${S}:q ${x.pitch.id}:q ${y.pitch.id}:h | ${P}:q ${x.pitch.id}:q ${y.pitch.id}:h`; mark = 3; answer = plain.nameId; prompt = 'The highlighted note comes after a bar line. What is it?'; }
-    else { melody = `${S}:q ${x.pitch.id}:q ${P}:q ${y.pitch.id}:q`; mark = 2; answer = plain.nameId; prompt = 'What is the highlighted note?'; }
-    const names = sortNames([plain.nameId, sharp.nameId]);
-    return {
-      type: 'mcq', prompt, visual: { staff: { melody, timeSig: [4, 4], mark, range: this.range } },
-      choices: names.map((id) => ({ note: id })), answer: names.indexOf(answer),
-    };
-  }
-
-  keyQuestion(variant) {
-    const k = this.keySig;
-    const letters = keySigLetters(k);
-    const word = k > 0 ? 'sharp' : 'flat';
-    const visual = { staff: { melody: 'r:w', keySig: k, endBar: 'none', minWidth: 150 } };
-    if (variant === 'which') {
-      if (letters.length === 1) {
-        const opts = sortNames([...new Set([letters[0], ...this.rng.shuffle(LETTER_ORDER.filter((l) => l !== letters[0])).slice(0, 3)])]);
-        return { type: 'mcq', prompt: `This key signature has one ${word}. Which note does it change?`, visual, choices: opts.map((l) => ({ label: l })), answer: opts.indexOf(letters[0]) };
-      }
-      const right = letters.join(' and ');
-      const wrong = ['F and G', 'C and G', 'B and E', 'F and B', 'C and D'].filter((w) => w !== right);
-      const list = this.rng.shuffle([right, ...this.rng.shuffle(wrong).slice(0, 2)]);
-      return { type: 'mcq', prompt: `Which notes are ${word} in this key signature?`, visual, choices: list.map((label) => ({ label })), answer: list.indexOf(right) };
-    }
-    const keys = [0, 1, 2, -1];
-    const list = this.rng.shuffle(keys);
-    return { type: 'mcq', prompt: 'Which major key has this key signature?', visual, choices: list.map((key) => ({ label: keyName(key) })), answer: list.indexOf(k) };
+    if (variant === 'same') return this.written([[[sharp, 'q'], [x, 'q'], [sharp, 'q'], [y, 'q']]]);
+    if (variant === 'next') return this.written([[[sharp, 'q'], [x, 'q'], [y, 'h']], [[plain, 'q'], [x, 'q'], [y, 'h']]]);
+    return this.written([[[sharp, 'q'], [x, 'q'], [plain, 'q'], [y, 'q']]]);
   }
 
   // ---- lesson recipes ----------------------------------------------------
+  // Everything a lesson asks is "play this": a single note (find), a phrase, a tune with rhythm, or a rhythm.
+
+  /** each new note alone twice, mixed with known notes, then phrases of growing length that feature the new notes */
   notesLesson() {
-    const L = this.lesson, out = [];
-    if (L.basics) out.push(this.mcqHigher(), this.mcqLineSpace());
-    for (const n of L.learn.slice(0, 3)) out.push(this.name(n), this.find(n));
-    for (const n of L.learn.slice(3)) out.push(this.rng.chance(0.5) ? this.name(n) : this.find(n));
-    out.push(this.pickStaff(this.fresh()), this.fretToStaff(this.fresh()), this.name(this.any()), this.find(this.any()));
-    if (this.canPair()) out.push(this.pairs());
-    out.push(this.phrase(4, L.learn), this.fretToName(this.any()), this.find(this.any()), this.name(this.any()));
-    out.push(this.phrase(this.pool.length >= 4 ? 6 : 5, L.learn));
+    const L = this.lesson, n = L.learn.length;
+    const known = this.pool.filter((x) => !L.learn.some((l) => l.key === x.key));
+    const first = this.rng.shuffle(L.learn.slice());
+    let again = n <= 3 ? this.rng.shuffle(L.learn.slice()) : L.learn.slice().sort((a, b) => this.weight(b) - this.weight(a)).slice(0, 2);
+    if (n > 1 && again[0] === first.at(-1)) again = [...again.slice(1), again[0]];
+    const items = [...first, ...again];
+    if (!known.length && n <= 2) { // nothing else to mix in yet (the very first lesson): one more round of the new notes
+      const third = this.rng.shuffle(L.learn.slice());
+      if (n > 1 && third[0] === items.at(-1)) third.reverse();
+      items.push(...third);
+    }
+    const fillers = known.length ? (n <= 3 ? 2 : 1) : 0;
+    for (let k = fillers; k >= 1; k--) items.splice(Math.round((k * items.length) / (fillers + 1)), 0, null);
+    const out = items.map((note) => this.find(note ?? this.any(known)));
+    const lengths = n === 1 ? [3, 4, 5, 6] : n <= 3 ? [3, 5, 6] : [4, 6];
+    for (const len of lengths) out.push(this.phrase(len, L.learn));
     return out;
   }
 
-  mixLesson(count = 13) {
-    const out = [this.name(this.any())];
-    const menu = [['name', 3], ['find', 3], ['pickStaff', 1.5], ['fretToStaff', 1.5], ['fretToName', 1.2], ['pairs', 1], ['phrase', 2], ['hear', 1.2], ['tune', this.lesson.melody ? 2.2 : 0]];
-    const cap2 = { pairs: 2, hear: 2, phrase: 3, tune: 3 };
-    const used = {};
-    let prev = 'name';
-    while (out.length < count) {
-      const [type] = this.rng.weighted(menu, ([t, w]) => (t === prev || (cap2[t] && (used[t] || 0) >= cap2[t]) || (t === 'pairs' && !this.canPair()) ? 0 : w));
-      used[type] = (used[type] || 0) + 1;
-      prev = type;
-      if (type === 'pairs') out.push(this.pairs());
-      else if (type === 'phrase') out.push(this.phrase(5));
-      else if (type === 'hear') out.push(this.hear());
-      else if (type === 'tune') out.push(this.tune(1));
-      else out.push(this[type](this.any()));
-    }
-    out.push(this.lesson.melody ? this.tune(2) : this.phrase(6));
-    return out;
+  /** weak single notes, phrases and (where the lesson has a rhythm) tunes */
+  mixLesson() {
+    const tune = (bars, len) => (this.lesson.melody ? this.tune(bars) : this.phrase(len));
+    return [
+      this.find(this.any()), this.find(this.any()), this.phrase(4), this.find(this.any()), this.find(this.any()),
+      tune(1, 5), this.find(this.any()), this.phrase(5), this.find(this.any()), tune(2, 6),
+    ];
   }
 
   melodyLesson() {
-    return [this.tune(1), this.tune(1), this.hear(), this.tune(2), this.name(this.any()), this.tune(2), this.hear(), this.tune(2), this.tune(4)];
+    return [this.tune(1), this.tune(1), this.tune(2), this.tune(2), this.tune(3), this.tune(4)];
   }
 
   rhythmLesson() {
-    const L = this.lesson;
-    const q = L.mcq.slice(0, 3).concat(this.rng.shuffle(L.mcq.slice(3)).slice(0, 2)).map((r) => this.mcq(r));
-    const long = L.rhythm.patterns ? 2 : 2;
-    return [q[0], q[1], this.tap(1), q[2], this.hearRhythm(), this.tap(1), q[3], this.tap(long), this.hearRhythm(), this.tap(long), q[4], this.tap(long)].filter(Boolean);
+    return [this.tap(1), this.tap(1), this.tap(2), this.tap(2), this.tap(2), this.tap(3)];
   }
 
   songLesson() {
@@ -446,44 +229,28 @@ class Generator {
 
   accidentalsLesson() {
     const altered = this.pool.filter((n) => n.pitch.alter !== 0);
-    const text = (prompt, choices) => this.mcq(['text', { prompt, choices, answer: 0 }]);
+    const one = () => this.find(this.any(altered));
     return [
-      text('How long does a sharp or flat stay in force?', ['Until the next bar line', 'For one note only', 'For the rest of the piece']),
-      this.carry('same'), this.carry('next'), this.carry('natural'),
-      this.name(this.any(altered)), this.carry('same'), this.find(this.any(altered)),
-      text('What does a natural sign (♮) do?', ['Cancels a sharp or flat', 'Raises the note one fret', 'Makes the note longer']),
-      this.carry('next'), this.find(this.any(altered)), this.carry('natural'), this.name(this.any(altered)), this.carry('same'),
+      one(), this.accPhrase('same'), one(), this.accPhrase('next'), this.accPhrase('natural'),
+      one(), this.phrase(4, altered.slice(0, 2)), this.accPhrase('same'), this.accPhrase('natural'), this.accPhrase('next'),
     ];
   }
 
   keysigLesson() {
     const changed = this.pool.filter((n) => n.pitch.alter !== 0);
-    const pickChanged = () => (changed.length ? this.any(changed) : this.any());
+    const one = () => this.find(changed.length ? this.any(changed) : this.any());
+    const focus = changed.slice(0, 2);
     return [
-      this.keyQuestion('which'), this.name(pickChanged()), this.find(pickChanged()), this.name(this.any()),
-      this.keyQuestion('name'), this.phrase(5, changed.slice(0, 2)), this.name(pickChanged()), this.find(this.any()),
-      this.fretToName(pickChanged()), this.keyQuestion('which'), this.find(pickChanged()), this.name(this.any()), this.phrase(6, changed.slice(0, 2)),
+      one(), one(), this.find(this.any()), this.phrase(4, focus), one(),
+      this.find(this.any()), this.phrase(5, focus), one(), this.find(this.any()), this.phrase(6, focus),
     ];
   }
 
-  checkpoint(count = 18) {
-    const out = [];
-    const plan = ['name', 'find', 'name', 'find', 'fretToStaff', 'phrase', 'name', 'find', 'fretToName', 'pairs', 'name', 'find', 'phrase', 'fretToStaff', 'name', 'find', 'fretToName', 'phrase'];
-    for (const type of plan.slice(0, count)) {
-      if (type === 'pairs') out.push(this.canPair() ? this.pairs() : this.name(this.any()));
-      else if (type === 'phrase') out.push(this.phrase(6));
-      else out.push(this[type](this.any()));
-    }
-    return out;
+  /** single notes and phrases across the whole pool */
+  checkpoint(count = 10) {
+    const plan = ['find', 'find', 'find', 4, 'find', 'find', 5, 'find', 6, 6];
+    return plan.slice(0, count).map((step) => (step === 'find' ? this.find(this.any()) : this.phrase(step)));
   }
-}
-
-const cap = (text) => text[0].toUpperCase() + text.slice(1);
-
-/** do two rhythms sound identical when clapped? (rests vs. long notes can) */
-function sameOnsets(a, b) {
-  const sig = (m) => onsets(parseMelody(m)).map((o) => o.t).join(',');
-  return sig(a) === sig(b);
 }
 
 function patternMelody(rng, spec, used) {
@@ -597,14 +364,14 @@ export function generatePlacement(unit, { rng = makeRng() } = {}) {
   const before = LESSONS.filter((l) => l.unit.index < unit.index);
   const base = before.filter((l) => l.unit.zone === before.at(-1).unit.zone).at(-1);
   const lesson = { ...base, id: `placement-${unit.id}`, kind: 'checkpoint', learn: [], fresh: [], explicitAccidentals: false, title: `Jump to ${unit.title}` };
-  return new Generator(lesson, { rng, state: null, now: 0 }).checkpoint(16);
+  return new Generator(lesson, { rng, state: null, now: 0 }).checkpoint(10);
 }
 
 /**
  * A practice round built from the notes the player is weakest on.
  * Returns null when nothing has been learned yet.
  */
-export function generateReview(state, { rng = makeRng(), now = Date.now(), count = 12 } = {}) {
+export function generateReview(state, { rng = makeRng(), now = Date.now() } = {}) {
   const done = new Set(Object.keys(state.lessons).filter((id) => state.lessons[id]?.done));
   const known = learnedNotes(done);
   if (known.length < 2) return null;
@@ -615,11 +382,8 @@ export function generateReview(state, { rng = makeRng(), now = Date.now(), count
   const context = known.filter((n) => n.zone === zone);
   const lesson = { kind: 'mix', learn: pool, fresh: [], pool: context.length >= 3 ? context : known.filter((n) => n.zone === zone), frets: pool[0].frets, keySig: 0, explicitAccidentals: false, melody: null };
   const g = new Generator(lesson, { rng, state, now });
-  const out = [];
-  const types = ['name', 'find', 'fretToStaff', 'find', 'name', 'fretToName'];
-  for (let i = 0; out.length < count - 1; i++) out.push(g[types[i % types.length]](g.any(pool)));
-  out.push(g.phrase(6, pool.slice(0, 3)));
-  return out;
+  const plan = ['find', 'find', 'find', 4, 'find', 'find', 5, 'find', 'find', 6];
+  return plan.map((step) => (step === 'find' ? g.find(g.any(pool)) : g.phrase(step, pool.slice(0, 3))));
 }
 
 /** a set of rhythms to tap, in the style of one rhythm lesson */

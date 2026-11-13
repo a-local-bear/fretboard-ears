@@ -1,12 +1,12 @@
 // The course: units, lessons and the teaching cards shown before each lesson.
 //
 // Lesson kinds
-//   notes       introduces new notes (staff <-> name <-> fretboard)
+//   notes       introduces new notes (staff <-> fretboard); played one at a time, then in phrases
 //   mix         shuffles everything learned so far in this part of the neck
-//   rhythm      note values: questions, listening and tapping
+//   rhythm      note values and counting: cards, then rhythms to play
 //   melody      short generated tunes with real rhythms
 //   song        a real tune, phrase by phrase
-//   accidentals the bar-line rule and naturals
+//   accidentals the bar-line rule and naturals, played in short phrases
 //   keysig      reading under a key signature
 //   checkpoint  a longer test of a whole section
 //
@@ -24,9 +24,10 @@ const UNIT_DATA = [
     id: 'u1', title: 'First String', blurb: 'E, F and G on the thinnest string', tone: 'teal', zone: 'open',
     lessons: [
       {
-        kind: 'notes', title: 'E and F', learn: '1:0 1:1', basics: true,
+        kind: 'notes', title: 'E and F', learn: '1:0 1:1',
         intro: [
           { title: 'The staff', text: 'Music is written on five lines called the staff. The curly sign at the front is the treble clef — guitar music always uses it. The higher a note sits, the higher it sounds.', staff: { melody: 'F4:w A4:w C5:w E5:w' } },
+          { title: 'Lines and spaces', text: 'Every note sits either on a line or in a space, and going up the staff means going up in pitch. Counting from the bottom: E is on the first line, F in the space above it, G on the second line, A in the next space.', staff: { melody: 'E4:w F4:w G4:w A4:w', labels: true } },
           { title: 'Your fretboard', text: 'This diagram shows the neck like tablature does: string 1, the thinnest, is at the top and the nut is on the left. “Open” means you pluck the string without pressing a fret.', fretboard: { marks: [['1:0', '']] } },
         ],
       },
@@ -34,11 +35,10 @@ const UNIT_DATA = [
       {
         kind: 'rhythm', title: 'Count to four',
         rhythm: { timeSig: [4, 4], bpm: 72, cells: { q: 3, h: 2, w: 0.5 }, counts: 'beats' },
-        mcq: [['beats', 'q'], ['beats', 'h'], ['beats', 'w'], ['which', 'h', ['q', 'h', 'w']], ['name', 'w', ['q', 'h', 'w']], ['fill', ['q', 'h']]],
         intro: [
           { title: 'The beat', text: 'Music has a steady pulse — the beat. The two numbers after the clef are the time signature: the top one tells you how many beats are in each measure. Here that is four.', staff: { melody: `${G}:q ${G}:q ${G}:q ${G}:q | ${G}:q ${G}:q ${G}:q ${G}:q`, timeSig: [4, 4], counts: 'beats' } },
-          { title: 'How long notes last', text: 'The shape of a note tells you how many beats it lasts.', symbols: [['q', 'Quarter note', '1 beat'], ['h', 'Half note', '2 beats'], ['w', 'Whole note', '4 beats']] },
-          { title: 'Tapping rhythms', text: 'After the count-in, tap the pad exactly when each note starts. For long notes, tap once and wait — do not tap again until the next note.' },
+          { title: 'How long notes last', text: 'The shape of a note tells you how many beats it lasts. A measure of four-four holds four beats: one whole note, two half notes or four quarter notes fill it.', symbols: [['q', 'Quarter note', '1 beat'], ['h', 'Half note', '2 beats'], ['w', 'Whole note', '4 beats']] },
+          { title: 'Playing rhythms', text: 'You hear the rhythm first, then a count-in. Play each note exactly when it starts — on the guitar, pluck any string. For a long note, play once and let it ring: do not play again until the next note begins.' },
         ],
       },
       { kind: 'melody', title: 'First melodies', melody: { timeSig: [4, 4], bpm: 76, cells: { q: 3, h: 2, w: 0.3 } } },
@@ -54,10 +54,9 @@ const UNIT_DATA = [
       {
         kind: 'rhythm', title: 'Rests',
         rhythm: { timeSig: [4, 4], bpm: 72, cells: { q: 3, h: 1.5, qr: 2.5, hr: 1 }, must: ['qr', 'hr'], counts: 'beats' },
-        mcq: [['name', 'rq', ['rq', 'rh', 'q']], ['beats', 'rh'], ['which', 'rw', ['rw', 'rh', 'rq']], ['restFor', 'q'], ['restFor', 'h'], ['fill', ['rq', 'h']]],
         intro: [
           { title: 'Silence counts too', text: 'A rest tells you to stay silent for a number of beats. Keep counting through it!', symbols: [['rq', 'Quarter rest', '1 beat'], ['rh', 'Half rest', '2 beats — sits on the line'], ['rw', 'Whole rest', 'a whole measure — hangs from the line']] },
-          { title: 'Tapping with rests', text: 'When you reach a rest, simply do not tap. The playhead keeps moving, and so does your counting.' },
+          { title: 'Playing with rests', text: 'Every note has a rest of the same length: a quarter rest is one beat, a half rest two, a whole rest a full measure. When you reach a rest, do not play. The playhead keeps moving, and so does your counting.', staff: { melody: `${G}:q r:q ${G}:q r:q | ${G}:h r:h`, timeSig: [4, 4], counts: 'beats' } },
         ],
       },
       { kind: 'mix', title: 'Two strings together', melody: { timeSig: [4, 4], bpm: 80, cells: { q: 3, h: 2, qr: 1 } } },
@@ -72,9 +71,8 @@ const UNIT_DATA = [
       {
         kind: 'rhythm', title: 'Eighth notes',
         rhythm: { timeSig: [4, 4], bpm: 66, cells: { q: 3, h: 1, ee: 3.5, qr: 0.8 }, must: ['ee'], counts: 'eighths' },
-        mcq: [['beats', 'e'], ['name', 'e', ['q', 'e', 'h']], ['which', 'ee', ['ee', 'q', 'h']], ['howMany', 'e', 'q'], ['howMany', 'e', 'h'], ['fill', ['q', 'ee']]],
         intro: [
-          { title: 'Half a beat', text: 'An eighth note lasts half a beat, so two of them fit into one beat. Pairs are usually joined by a beam.', symbols: [['e', 'Eighth note', '½ beat'], ['ee', 'Two eighths', '1 beat together']] },
+          { title: 'Half a beat', text: 'An eighth note lasts half a beat, so two of them fit into one beat and four into a half note. Pairs are usually joined by a beam.', symbols: [['e', 'Eighth note', '½ beat'], ['ee', 'Two eighths', '1 beat together']] },
           { title: 'Count the “ands”', text: 'Say “1 and 2 and 3 and 4 and”. Notes on the numbers fall on the beat; the “ands” fall exactly in between.', staff: { melody: `${G}:q ${G}:e ${G}:e ${G}:q ${G}:e ${G}:e`, timeSig: [4, 4], counts: 'eighths' } },
         ],
       },
@@ -92,9 +90,8 @@ const UNIT_DATA = [
       {
         kind: 'rhythm', title: 'Three-four time',
         rhythm: { timeSig: [3, 4], bpm: 80, cells: { q: 3, h: 2, 'h.': 1.5, ee: 1.2, qr: 0.6 }, must: ['h.'], counts: 'beats' },
-        mcq: [['beats', 'h.'], ['text', { prompt: 'A dot after a note adds…', choices: ['half of its value', 'one extra beat, always', 'nothing — it is decoration'], answer: 0 }], ['timeTop', [3, 4]], ['timeTop', [4, 4]], ['fill', ['q', 'h'], [3, 4]], ['which', 'h.', ['h', 'h.', 'q.']]],
         intro: [
-          { title: 'Three beats in a bar', text: 'When the top number is 3, every measure has three beats: count “1 2 3, 1 2 3”. Waltzes move like this.', staff: { melody: `${G}:q ${G}:q ${G}:q | ${G}:h ${G}:q | ${G}:h.`, timeSig: [3, 4], counts: 'beats' } },
+          { title: 'Three beats in a bar', text: 'The top number of the time signature is the number of beats in each measure: four in four-four, three here. Count “1 2 3, 1 2 3”. Waltzes move like this.', staff: { melody: `${G}:q ${G}:q ${G}:q | ${G}:h ${G}:q | ${G}:h.`, timeSig: [3, 4], counts: 'beats' } },
           { title: 'The dot', text: 'A dot after a note adds half of its value. A half note is 2 beats, so a dotted half note is 2 + 1 = 3 beats — a whole measure of three-four.', symbols: [['h', 'Half note', '2 beats'], ['h.', 'Dotted half note', '3 beats']] },
         ],
       },
@@ -116,9 +113,8 @@ const UNIT_DATA = [
       {
         kind: 'rhythm', title: 'Dotted quarter notes',
         rhythm: { timeSig: [4, 4], bpm: 66, cells: { q: 3, h: 1.5, ee: 1.5, 'q.e': 3.5 }, must: ['q.e'], counts: 'eighths' },
-        mcq: [['beats', 'q.'], ['text', { prompt: 'A dotted quarter note is usually followed by…', choices: ['an eighth note', 'a whole note', 'a bar line'], answer: 0 }], ['which', 'q.', ['q', 'q.', 'h.']], ['fill', ['e', 'q'], [4, 4], `${G}:q ${G}:q ${G}:q.`], ['howMany', 'e', 'q.']],
         intro: [
-          { title: 'One and a half beats', text: 'A dot adds half of a note’s value, so a dotted quarter lasts 1½ beats. The eighth note after it completes the second beat.', symbols: [['q.', 'Dotted quarter', '1½ beats'], ['e', 'Eighth note', '½ beat']] },
+          { title: 'One and a half beats', text: 'A dot adds half of a note’s value, so a dotted quarter lasts 1½ beats. It is usually followed by an eighth note: 1½ + ½ = 2 beats.', symbols: [['q.', 'Dotted quarter', '1½ beats'], ['e', 'Eighth note', '½ beat']] },
           { title: 'How to count it', text: 'Tap on “1”, hold through “and 2”, then tap the short note on the “and” of 2.', staff: { melody: `${G}:q. ${G}:e ${G}:q ${G}:q`, timeSig: [4, 4], counts: 'eighths' } },
         ],
       },
@@ -138,9 +134,8 @@ const UNIT_DATA = [
           timeSig: [4, 4], bpm: 72, counts: 'beats',
           patterns: ['q q h~ | h q q', 'h q q~ | q q h', 'q q q q~ | q h q', 'q h q~ | q q h', 'h. q~ | q q h', 'q q~ q q | h h', 'h~ q q | w', 'q h~ q | h h', 'h h~ | h q q', 'q q h~ | q q h'],
         },
-        mcq: [['tie', 'h', 'q'], ['tie', 'q', 'q'], ['tie', 'h', 'h'], ['tie', 'w', 'q'], ['text', { prompt: 'Two notes of the same pitch are joined by a tie. What do you do?', choices: ['Play once and hold for both', 'Play both notes', 'Skip the second note’s time'], answer: 0 }]],
         intro: [
-          { title: 'Tied notes', text: 'A tie is a curved line joining two notes of the same pitch. Play the first note and keep it ringing through the second — their lengths add up. Ties let a note last across a bar line.', staff: { melody: `${G}:q ${G}:q ${G}:h~ | ${G}:h ${G}:q ${G}:q`, timeSig: [4, 4], counts: 'beats' } },
+          { title: 'Tied notes', text: 'A tie is a curved line joining two notes of the same pitch. Play the first note only and keep it ringing through the second — their lengths add up: a half note tied to a quarter lasts 2 + 1 = 3 beats. Ties let a note last across a bar line.', staff: { melody: `${G}:q ${G}:q ${G}:h~ | ${G}:h ${G}:q ${G}:q`, timeSig: [4, 4], counts: 'beats' } },
         ],
       },
       { kind: 'song', title: 'When the Saints', song: 'saints' },
@@ -165,8 +160,8 @@ const UNIT_DATA = [
       {
         kind: 'accidentals', title: 'Naturals and the bar line', explicitAccidentals: false,
         intro: [
-          { title: 'It lasts for the measure', text: 'A sharp or flat stays in force until the next bar line: every later note on that same line or space is affected too, even without a sign of its own.', staff: { melody: 'F#5:q G5:q F#5:q E5:q | F5:q G5:q F5:h', timeSig: [4, 4], labels: true } },
-          { title: 'The natural sign', text: 'A natural sign (♮) cancels a sharp or flat for the rest of the measure.', staff: { melody: 'F#5:q E5:q F5:q E5:q', timeSig: [4, 4], labels: true }, symbols: [['sharp', 'Sharp', 'one fret higher'], ['flat', 'Flat', 'one fret lower'], ['natural', 'Natural', 'back to normal']] },
+          { title: 'It lasts for the measure', text: 'A sharp or flat stays in force until the next bar line: every later note on that same line or space is affected too, even without a sign of its own. At the bar line it ends: the F in the next measure is a plain F again.', staff: { melody: 'F#5:q G5:q F#5:q E5:q | F5:q G5:q F5:h', timeSig: [4, 4], labels: true } },
+          { title: 'The natural sign', text: 'A natural sign (♮) cancels a sharp or flat for the rest of the measure. You will play short phrases built on these rules, so play every note as it really sounds.', staff: { melody: 'F#5:q E5:q F5:q E5:q', timeSig: [4, 4], labels: true }, symbols: [['sharp', 'Sharp', 'one fret higher'], ['flat', 'Flat', 'one fret lower'], ['natural', 'Natural', 'back to normal']] },
         ],
       },
       { kind: 'song', title: 'Hall of the Mountain King', song: 'mountain-king' },
@@ -180,17 +175,17 @@ const UNIT_DATA = [
     lessons: [
       {
         kind: 'keysig', title: 'G major: one sharp', keySig: 1,
-        intro: [{ title: 'Key signatures', text: 'Sharps or flats placed right after the clef are a key signature. They apply to every note with that letter — in every octave — for the whole piece. One sharp on the F line means every F is played F♯.', staff: { melody: 'G4:q A4:q B4:q C5:q | D5:q E5:q F#5:q G5:q', keySig: 1, timeSig: [4, 4], labels: true } }],
+        intro: [{ title: 'Key signatures', text: 'Sharps or flats placed right after the clef are a key signature. They apply to every note with that letter — in every octave — for the whole piece. One sharp on the F line means every F is played F♯. This one is the key signature of G major.', staff: { melody: 'G4:q A4:q B4:q C5:q | D5:q E5:q F#5:q G5:q', keySig: 1, timeSig: [4, 4], labels: true } }],
       },
       { kind: 'song', title: 'Drunken Sailor', song: 'drunken-sailor' },
       {
         kind: 'keysig', title: 'D major: two sharps', keySig: 2,
-        intro: [{ title: 'Two sharps', text: 'Sharps always arrive in the same order: F♯ first, then C♯. With two sharps, every F and every C is raised by one fret.', staff: { melody: 'D4:q E4:q F#4:q G4:q | A4:q B4:q C#5:q D5:q', keySig: 2, timeSig: [4, 4], labels: true } }],
+        intro: [{ title: 'Two sharps', text: 'Sharps always arrive in the same order: F♯ first, then C♯. With two sharps, every F and every C is raised by one fret. This is the key of D major.', staff: { melody: 'D4:q E4:q F#4:q G4:q | A4:q B4:q C#5:q D5:q', keySig: 2, timeSig: [4, 4], labels: true } }],
       },
       { kind: 'song', title: 'Joy to the World', song: 'joy-to-the-world' },
       {
         kind: 'keysig', title: 'F major: one flat', keySig: -1,
-        intro: [{ title: 'One flat', text: 'The first flat is always B♭. With this key signature every B is played one fret lower.', staff: { melody: 'F4:q G4:q A4:q Bb4:q | C5:q D5:q E5:q F5:q', keySig: -1, timeSig: [4, 4], labels: true } }],
+        intro: [{ title: 'One flat', text: 'The first flat is always B♭. With this key signature every B is played one fret lower. This is the key of F major.', staff: { melody: 'F4:q G4:q A4:q Bb4:q | C5:q D5:q E5:q F5:q', keySig: -1, timeSig: [4, 4], labels: true } }],
       },
       { kind: 'song', title: 'Twinkle in F', song: 'twinkle-f' },
       { kind: 'song', title: 'Minuet in G', song: 'minuet-in-g' },
@@ -217,9 +212,8 @@ const UNIT_DATA = [
       {
         kind: 'rhythm', title: 'Sixteenth notes',
         rhythm: { timeSig: [4, 4], bpm: 56, cells: { q: 2.5, h: 0.8, ee: 2, ssss: 3, ess: 1.5, sse: 1.5 }, must: ['ssss', 'ess', 'sse'], counts: 'eighths' },
-        mcq: [['beats', 's'], ['name', 's', ['e', 's', 'q']], ['howMany', 's', 'q'], ['howMany', 's', 'e'], ['which', 's', ['e', 's', 'q']]],
         intro: [
-          { title: 'Four to a beat', text: 'A sixteenth note lasts a quarter of a beat: four of them fit in one beat. They have two beams (or two flags).', symbols: [['s', 'Sixteenth note', '¼ beat'], ['e', 'Eighth note', '½ beat']] },
+          { title: 'Four to a beat', text: 'A sixteenth note lasts a quarter of a beat: two fit in an eighth note and four in one beat. They have two beams (or two flags).', symbols: [['s', 'Sixteenth note', '¼ beat'], ['e', 'Eighth note', '½ beat']] },
           { title: 'Counting sixteenths', text: 'Count “1 e and a, 2 e and a”. Keep your taps perfectly even — the tempo is slow on purpose.', staff: { melody: `${G}:s ${G}:s ${G}:s ${G}:s ${G}:q ${G}:e ${G}:s ${G}:s ${G}:q`, timeSig: [4, 4], counts: 'eighths' } },
         ],
       },
@@ -243,7 +237,6 @@ const UNIT_DATA = [
       {
         kind: 'rhythm', title: 'Syncopation',
         rhythm: { timeSig: [4, 4], bpm: 66, cells: { q: 2.5, h: 1, ee: 2, syn: 3.5, 'q.e': 1.5 }, must: ['syn'], counts: 'eighths' },
-        mcq: [['text', { prompt: 'In a syncopated rhythm, important notes land…', choices: ['between the beats', 'only on beat 1', 'on rests'], answer: 0 }], ['beats', 'q.'], ['howMany', 'e', 'h'], ['fill', ['e', 'q'], [4, 4], `${G}:e ${G}:q ${G}:e ${G}:q ${G}:e`]],
         intro: [{ title: 'Off the beat', text: 'Syncopation puts long notes on the “ands”, between the beats. In this pattern the middle note starts on the “and” of 1 and holds across beat 2.', staff: { melody: `${G}:e ${G}:q ${G}:e ${G}:q ${G}:q`, timeSig: [4, 4], counts: 'eighths' } }],
       },
       {
@@ -291,8 +284,8 @@ function build() {
         frets, // the part of the neck shown on screen (a song may use a narrower window to place its notes)
         keySig,
         explicitAccidentals: l.explicitAccidentals ?? Boolean(u.explicitAccidentals),
-        basics: Boolean(l.basics), tip: l.tip ?? null,
-        rhythm: l.rhythm ?? null, mcq: l.mcq ?? null, melody: l.melody ?? null,
+        tip: l.tip ?? null,
+        rhythm: l.rhythm ?? null, melody: l.melody ?? null,
         song: l.song ? SONGS[l.song] : null,
         intro: l.intro ?? [],
       };
@@ -311,7 +304,7 @@ function describeLesson(l) {
   switch (l.kind) {
     case 'notes': return `New: ${l.learn.map((n) => n.name).filter((v, i, a) => a.indexOf(v) === i).join(', ')}`;
     case 'mix': return 'Mix up everything so far';
-    case 'rhythm': return 'Read and tap rhythms';
+    case 'rhythm': return 'Read and play rhythms';
     case 'melody': return 'Read short tunes in rhythm';
     case 'song': return l.song.credit;
     case 'accidentals': return 'How long a sharp or flat lasts';

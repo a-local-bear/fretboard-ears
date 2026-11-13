@@ -39,7 +39,7 @@ export function practiceView(nav) {
     h('h1', { class: 'page-title' }, 'Practice'),
     card('brain', 'violet', 'Review weak notes', tooEarly ? 'Finish your first lesson to unlock this' : due ? `${plural(due, 'note')} could use some attention` : 'Everything looks strong — a review never hurts', '/review', tooEarly),
     card('timer', 'coral', 'One-minute sprint', tooEarly ? 'Finish your first lesson to unlock this' : state.stats.sprintBest ? `Your best: ${plural(state.stats.sprintBest, 'note')}` : 'How many notes can you read in 60 seconds?', '/sprint', tooEarly),
-    card('metronome', 'blue', 'Rhythm gym', 'Six rhythms to tap, at the level you have reached', '/rhythm'),
+    card('metronome', 'blue', 'Rhythm gym', 'Six rhythms to play, at the level you have reached', '/rhythm'),
     card('book-open', 'amber', 'Songbook', `${unlocked} of ${songs.length} songs unlocked`, '/songs'),
     card('gauge', 'green', 'Tuner', 'Tune your guitar using the microphone', '/tuner'));
 }
@@ -70,7 +70,7 @@ export function sprintView(nav) {
 
   function setup() {
     let mode = 'name';
-    const useMic = prefs.get('input') === 'mic';
+    const useMic = prefs.get('input') === 'mic' && mic.supported;
     mount(root, pageHead('One-minute sprint', nav),
       h('div', { class: 'card center' },
         mascot('wink', 'mascot-big'),
@@ -150,7 +150,7 @@ export function rhythmView(nav) {
     pageHead('Rhythm gym', nav),
     h('div', { class: 'card center' },
       mascot('happy', 'mascot-big'),
-      h('p', { class: 'lead' }, 'Six rhythms to tap along with the metronome. New rhythm lessons add new levels here.'),
+      h('p', { class: 'lead' }, 'Six rhythms to play along with the metronome. New rhythm lessons add new levels here.'),
       offered.length > 1 ? h('div', { class: 'level-list', role: 'group', 'aria-label': 'Level' }, offered.map((l) => h('button', {
         type: 'button', class: 'level', 'aria-pressed': String(l === chosen), dataset: { lesson: l.id },
         onclick: (ev) => { chosen = l; for (const b of ev.currentTarget.parentNode.children) b.setAttribute('aria-pressed', String(b === ev.currentTarget)); },

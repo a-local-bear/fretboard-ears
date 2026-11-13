@@ -420,42 +420,17 @@ a.chip { text-decoration: none; }
 .choices { width: 100%; display: grid; gap: 10px; }
 .choices-row { grid-template-columns: repeat(auto-fit, minmax(68px, 1fr)); }
 .choices-seven { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
-.choices-col { grid-template-columns: 1fr; }
 .choice {
   min-height: 60px; padding: 8px 10px; border-radius: 16px; border: 2px solid var(--line); border-bottom-width: 4px;
   background: var(--surface); color: var(--ink); font-weight: 900; font-size: 21px; line-height: 1.2; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
-.choice-text { font-size: 17px; }
 .choice:active:not(:disabled) { transform: translateY(2px); border-bottom-width: 2px; margin-bottom: 2px; }
-.choice:disabled, .option:disabled, .pair:disabled { cursor: default; color: var(--ink); opacity: 1; }
-.choice.is-good, .option.is-good, .pair.is-good { background: var(--good-soft); border-color: var(--good); color: var(--good-ink); }
-.choice.is-bad, .option.is-bad, .pair.is-bad { background: var(--bad-soft); border-color: var(--bad); color: var(--bad-ink); animation: shake 0.35s; }
-.choice-symbol .symbol { height: 46px; width: auto; }
+.choice:disabled { cursor: default; color: var(--ink); opacity: 1; }
+.choice.is-good { background: var(--good-soft); border-color: var(--good); color: var(--good-ink); }
+.choice.is-bad { background: var(--bad-soft); border-color: var(--bad); color: var(--bad-ink); animation: shake 0.35s; }
 .note-name { display: inline-flex; align-items: baseline; white-space: nowrap; }
 .acc { height: 0.95em; width: auto; margin-left: 0.05em; align-self: center; color: currentColor; }
-
-.options { width: 100%; display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
-.options-row { flex-direction: row; justify-content: center; flex-wrap: wrap; }
-.option {
-  padding: 6px 8px; border-radius: 16px; border: 2px solid var(--line); border-bottom-width: 4px; background: var(--paper);
-  cursor: pointer; display: flex; justify-content: center; align-items: center; color: var(--staff-ink); min-width: 0;
-}
-.options-row .option { flex: 1 1 96px; max-width: 150px; }
-.option:active:not(:disabled) { transform: translateY(2px); border-bottom-width: 2px; margin-bottom: 2px; }
-.option .staff, .pair .staff { pointer-events: none; min-width: 0; }
-.options-row .option .staff { width: 100%; }
-
-.pairs { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.pair-col { display: flex; flex-direction: column; gap: 10px; }
-.pair {
-  min-height: 74px; padding: 4px 6px; border-radius: 16px; border: 2px solid var(--line); border-bottom-width: 4px; background: var(--surface);
-  color: var(--ink); font-weight: 900; font-size: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center;
-}
-.pair-l { background: var(--paper); color: var(--staff-ink); }
-.pair-place { font-size: 15.5px; line-height: 1.2; }
-.pair.is-picked { border-color: var(--accent); background: var(--accent-soft); }
-.pair.is-good { opacity: 0.55; }
 
 .intro-stage { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .bubble-row { width: 100%; display: flex; align-items: flex-start; gap: 10px; }
@@ -471,7 +446,6 @@ a.chip { text-decoration: none; }
 .symbol-cell { width: 54px; height: 56px; display: grid; place-items: center; flex: none; }
 .symbol-cell .symbol { max-height: 52px; width: auto; }
 .symbol { color: var(--staff-ink); max-width: 100%; height: auto; display: block; }
-.symbol-big { display: flex; gap: 26px; align-items: flex-end; justify-content: center; padding: 14px 26px; background: var(--paper); }
 .song-art { width: 96px; height: 96px; border-radius: 28px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-strong); }
 .song-art .icon { width: 56px; height: 56px; }
 
@@ -483,7 +457,6 @@ a.chip { text-decoration: none; }
 .heard { font-size: 15px; color: var(--muted); white-space: nowrap; }
 .heard strong { color: var(--ink); font-size: 18px; }
 .listen-hint { text-align: center; color: var(--ink-2); font-size: 15.5px; }
-.listen-btn { min-width: 150px; }
 
 .count-in { min-height: 34px; font-size: 26px; font-weight: 900; color: var(--accent-strong); text-align: center; }
 .tap-pad {
