@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f4eee3" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1b1920" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="An interactive course for writing bedroom-pop chord progressions and melodies on guitar.">
+  <title>Woozy — bedroom-pop guitar songwriting</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/app.css">
+  <script>
+    // Apply a saved theme before first paint so the page never flashes.
+    try {
+      var t = JSON.parse(localStorage.getItem('woozy.prefs.v1') || '{}').theme;
+      if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <div id="app"><p class="boot">Tuning up…</p></div>
+  <noscript><p class="boot">Woozy needs JavaScript — it synthesises the guitar, bass and drums in your browser.</p></noscript>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

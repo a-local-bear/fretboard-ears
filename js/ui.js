@@ -181,6 +181,11 @@ const SCREENS = {
         <li><a class="chapter" href="songcraft/" data-focus-key="app-songcraft">
           <span class="cnum">2</span>
           <span class="cbody"><span class="cname">Songcraft</span><span class="cdesc">Write chord progressions, and indie, pop and jazzy riffs that fit them</span></span>
+          <span class="cmeta"></span>
+        </a></li>
+        <li><a class="chapter" href="woozy/" data-focus-key="app-woozy">
+          <span class="cnum">3</span>
+          <span class="cbody"><span class="cname">Woozy</span><span class="cdesc">A course in bedroom-pop chords and melodies, and a studio to write whole songs</span></span>
           <span class="cmeta">New</span>
         </a></li>
       </ol>

@@ -11,7 +11,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PATTERNS = ['index.html', 'style.css', 'manifest.webmanifest', 'js/*.js', 'fonts/*.woff2', 'icons/*.png', 'samples/*/*.mp3',
-            'songcraft/index.html', 'songcraft/style.css', 'songcraft/js/*.js']
+            'songcraft/index.html', 'songcraft/style.css', 'songcraft/js/*.js',
+            'woozy/index.html', 'woozy/favicon.svg', 'woozy/css/*.css', 'woozy/js/**/*.js']
 
 
 def main():

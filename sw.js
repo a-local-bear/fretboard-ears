@@ -2,7 +2,7 @@
 // The block between the STAMP markers is rewritten by tools/stamp_version.py; don't edit it by hand.
 
 // STAMP:BEGIN
-const CACHE = 'fe-9e8b08c390';
+const CACHE = 'fe-981ab42e56';
 const PRECACHE = [
   "./",
   "fonts/jetbrains-mono-latin-wght-normal.woff2",
@@ -84,7 +84,40 @@ const PRECACHE = [
   "songcraft/js/theory.js",
   "songcraft/js/ui.js",
   "songcraft/style.css",
-  "style.css"
+  "style.css",
+  "woozy/css/app.css",
+  "woozy/favicon.svg",
+  "woozy/index.html",
+  "woozy/js/audio/audio.js",
+  "woozy/js/audio/dsp.js",
+  "woozy/js/audio/engine.js",
+  "woozy/js/content/cookbook.js",
+  "woozy/js/content/curriculum.js",
+  "woozy/js/content/helpers.js",
+  "woozy/js/content/m1-foundations.js",
+  "woozy/js/content/m3-progressions.js",
+  "woozy/js/content/m4-colour-rhythm.js",
+  "woozy/js/content/m6-melody.js",
+  "woozy/js/content/m7-songwriting.js",
+  "woozy/js/dom.js",
+  "woozy/js/main.js",
+  "woozy/js/music/melody.js",
+  "woozy/js/music/theory.js",
+  "woozy/js/music/voicings.js",
+  "woozy/js/songs.js",
+  "woozy/js/store.js",
+  "woozy/js/ui/blocks.js",
+  "woozy/js/ui/chord-diagram.js",
+  "woozy/js/ui/fretboard.js",
+  "woozy/js/ui/melody-editor.js",
+  "woozy/js/ui/progression.js",
+  "woozy/js/ui/quiz.js",
+  "woozy/js/ui/tab.js",
+  "woozy/js/ui/widgets.js",
+  "woozy/js/views/home.js",
+  "woozy/js/views/lesson.js",
+  "woozy/js/views/studio.js",
+  "woozy/js/views/tools.js"
 ];
 // STAMP:END
 
@@ -111,8 +144,10 @@ self.addEventListener('fetch', (event) => {
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     if (req.mode === 'navigate') {
-      // Songcraft is a page of its own; every other address is the single-page ear trainer.
-      if (/\/songcraft\/(index\.html)?$/.test(new URL(req.url).pathname)) return (await cache.match('songcraft/index.html')) || fetch(req);
+      // Songcraft and Woozy are pages of their own; every other address is the single-page ear trainer.
+      const path = new URL(req.url).pathname;
+      if (/\/songcraft\/(index\.html)?$/.test(path)) return (await cache.match('songcraft/index.html')) || fetch(req);
+      if (/\/woozy\/(index\.html)?$/.test(path)) return (await cache.match('woozy/index.html')) || fetch(req);
       return (await cache.match('./', { ignoreSearch: true })) || (await cache.match('index.html')) || fetch(req);
     }
     const hit = await cache.match(req, { ignoreSearch: true });
