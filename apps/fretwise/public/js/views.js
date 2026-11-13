@@ -1,14 +1,14 @@
-// The main screens: choosing a player, the learning map, profile and settings.
+// The main screens: the learning map, profile and settings.
 // Every view function returns a DOM node, or {el, destroy} when it needs cleanup.
 
-import { h, s, icon, mount } from './dom.js';
+import { h, s, icon } from './dom.js';
 import { store } from './store.js';
 import { prefs, applyTheme } from './prefs.js';
 import { audio } from './audio.js';
 import { mic } from './mic.js';
 import { UNITS, LESSONS } from './curriculum.js';
 import {
-  GOALS, TONES, AWARDS, levelFor, todayXp, streakNow, practisedToday, recentDays, isDone, isUnlocked, nextLesson, unitProgress,
+  GOALS, AWARDS, levelFor, todayXp, streakNow, practisedToday, recentDays, isDone, isUnlocked, nextLesson, unitProgress,
   courseProgress, noteStrength, strengthBand,
 } from './progress.js';
 import { knownNotes } from './generate.js';
@@ -18,83 +18,6 @@ import { button, mascot, modal, confirmDialog, toast, ring, stars, segmented, to
 import { dayKey, formatTime, plural } from './util.js';
 
 const OFFSETS = [0, 46, 70, 46, 0, -46, -70, -46];
-
-// ---------------------------------------------------------------------------
-// Who is playing?
-// ---------------------------------------------------------------------------
-export function onboardingView(nav) {
-  const root = h('div', { class: 'welcome' });
-
-  function form(hasOthers) {
-    let tone = TONES[Math.floor(Math.random() * TONES.length)];
-    let goal = 20;
-    const name = h('input', { class: 'input', type: 'text', maxlength: 24, placeholder: 'Your name', autocomplete: 'off', autocapitalize: 'words', 'aria-label': 'Your name' });
-    const face = h('div', { class: `avatar avatar-big tone-${tone}` }, mascot('happy'));
-    const swatches = h('div', { class: 'swatches', role: 'group', 'aria-label': 'Pick a colour' }, TONES.map((t) => h('button', {
-      type: 'button', class: `swatch tone-${t}`, 'aria-label': t, 'aria-pressed': String(t === tone),
-      onclick: (ev) => {
-        tone = t;
-        face.setAttribute('class', `avatar avatar-big tone-${t}`);
-        for (const b of swatches.children) b.setAttribute('aria-pressed', String(b === ev.currentTarget));
-      },
-    })));
-    const error = h('p', { class: 'form-error', role: 'alert' });
-    const submit = async () => {
-      const value = name.value.trim();
-      if (!value) { error.textContent = 'Please type a name first.'; name.focus(); return; }
-      go.disabled = true;
-      try {
-        await store.create(value, tone);
-        store.update((st) => { st.settings.goal = goal; });
-        audio.unlock();
-        nav.go('/');
-      } catch (err) {
-        error.textContent = `That did not work (${err.message}). Is the Fretwise server still running?`;
-        go.disabled = false;
-      }
-    };
-    const go = button('Start learning', { cls: 'btn-wide create', icon: 'arrow-right', onclick: submit });
-    name.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') submit(); });
-    mount(root,
-      face,
-      h('h1', null, 'Welcome to Fretwise'),
-      h('p', { class: 'lead' }, 'Learn to read music on guitar, a few minutes at a time. I’m Plec — what should I call you?'),
-      h('div', { class: 'form' },
-        name, swatches,
-        h('label', { class: 'field-label' }, 'How much do you want to practise each day?'),
-        segmented(GOALS.map((g) => ({ value: g.xp, label: [h('strong', null, g.name), h('small', null, `${g.xp} XP`)] })), goal, (v) => { goal = Number(v); }, 'Daily goal'),
-        error, go,
-        hasOthers ? button('Back to the list of players', { kind: 'ghost', onclick: list }) : null));
-  }
-
-  async function list() {
-    mount(root, mascot('think', 'mascot-big'), h('p', { class: 'lead' }, 'Tuning up…'));
-    let profiles;
-    try { profiles = await store.profiles(); } catch {
-      mount(root, mascot('sad', 'mascot-big'), h('h1', null, 'Cannot reach the server'),
-        h('p', { class: 'lead' }, 'Fretwise keeps your progress on the computer that hosts it. Check that it is switched on and on the same network, then try again.'),
-        button('Try again', { icon: 'arrow-counter-clockwise', onclick: list }));
-      return;
-    }
-    if (!profiles.length) { form(false); return; }
-    mount(root,
-      mascot('happy', 'mascot-big'),
-      h('h1', null, 'Who is playing?'),
-      h('div', { class: 'players' }, profiles.map((p) => h('button', {
-        class: 'player', type: 'button', dataset: { id: p.id },
-        onclick: async () => {
-          try { if (await store.open(p.id)) { audio.unlock(); nav.go('/'); } else list(); } catch { toast('The server cannot be reached right now.', { icon: 'warning-circle' }); }
-        },
-      },
-      h('span', { class: `avatar tone-${p.avatar?.tone || 'teal'}` }, mascot('happy')),
-      h('span', { class: 'player-text' }, h('strong', null, p.name), h('small', null, `${p.xp} XP${p.streak ? ` · ${plural(p.streak, 'day')} streak` : ''}`)),
-      icon('caret-right')))),
-      button('New player', { kind: 'soft', icon: 'plus', cls: 'new-player', onclick: () => form(true) }));
-  }
-
-  list();
-  return root;
-}
 
 // ---------------------------------------------------------------------------
 // Learn: the map of units and lessons
@@ -117,7 +40,7 @@ export function homeView(nav) {
 
   const today_ = h('section', { class: 'card today' },
     h('div', { class: 'today-text' },
-      h('h1', null, `${hello}, ${state.name}!`),
+      h('h1', null, `${hello}!`),
       h('p', null, line),
       next
         ? button(`${started ? 'Continue' : 'Start'}: ${next.title}`, { icon: 'play', cls: 'cta', onclick: () => nav.go(`/lesson/${next.id}`) })
@@ -243,10 +166,10 @@ export function profileView(nav) {
   const kpi = (ic, value, label, tint) => h('div', { class: 'kpi' }, icon(ic, tint), h('strong', null, String(value)), h('span', null, label));
   return h('div', { class: 'profile' },
     h('section', { class: 'card me' },
-      h('span', { class: `avatar avatar-big tone-${state.avatar.tone}` }, mascot('happy')),
+      h('span', { class: 'avatar avatar-big tone-teal' }, mascot('happy')),
       h('div', { class: 'me-text' },
-        h('h1', null, state.name),
-        h('p', null, `Level ${level.level} · ${level.title}`),
+        h('h1', null, `Level ${level.level}`),
+        h('p', null, level.title),
         h('div', { class: 'meter', role: 'progressbar', 'aria-label': 'Progress to the next level', 'aria-valuemin': 0, 'aria-valuemax': level.need, 'aria-valuenow': level.into },
           h('i', { style: { width: `${Math.round((level.into / level.need) * 100)}%` } })),
         h('small', null, `${level.need - level.into} XP to level ${level.level + 1}`))),
@@ -280,7 +203,7 @@ export function profileView(nav) {
 // ---------------------------------------------------------------------------
 export async function micHelp() {
   const info = store.info || await store.loadInfo();
-  // hand the current player over to the secure address so nobody has to pick their name again
+  // hand the same progress over to the secure address
   const secureUrl = info && info.httpsPort ? `https://${window.location.hostname}:${info.httpsPort}/${store.id ? `?p=${store.id}` : ''}` : null;
   const insecure = !window.isSecureContext;
   modal({
@@ -354,8 +277,7 @@ export function settingsView(nav) {
   return h('div', { class: 'settings' },
     h('section', { class: 'card' },
       h('h2', null, 'Learning'),
-      row('Daily goal', 'How much XP you aim for each day', segmented(GOALS.map((g) => ({ value: g.xp, label: String(g.xp) })), state.settings.goal, (v) => set((x) => { x.goal = Number(v); }), 'Daily goal')),
-      row('Hearts', 'Five mistakes end a lesson. Switch off for relaxed practice.', toggle(state.settings.hearts, (v) => set((x) => { x.hearts = v; }), 'Hearts'))),
+      row('Daily goal', 'How much XP you aim for each day', segmented(GOALS.map((g) => ({ value: g.xp, label: String(g.xp) })), state.settings.goal, (v) => set((x) => { x.goal = Number(v); }), 'Daily goal'))),
     h('section', { class: 'card' },
       h('h2', null, 'On this device'),
       row('Answer with', 'Tap the fretboard on screen, or let Fretwise listen to your guitar', inputControl),
@@ -367,20 +289,20 @@ export function settingsView(nav) {
       row('Low E on top', 'Show the thickest string at the top, as you see it when you look down at your guitar', toggle(state.settings.lowOnTop, (v) => set((x) => { x.lowOnTop = v; }), 'Low E on top'))),
     store.standalone ? h('section', { class: 'card' },
       h('h2', null, 'Your progress'),
-      h('p', { class: 'muted' }, 'Players and progress are kept in this browser, on this device only. Clearing the browser’s site data removes them.')
+      h('p', { class: 'muted' }, 'Your progress is kept in this browser, on this device only. Clearing the browser’s site data removes them.')
     ) : h('section', { class: 'card' },
       h('h2', null, 'Use it on another device'),
-      h('p', { class: 'muted' }, 'Any phone, tablet or computer on the same network can open Fretwise. Your progress follows you — just pick your name.'),
+      h('p', { class: 'muted' }, 'Any phone, tablet or computer on the same network can open Fretwise. Your progress follows you.'),
       addresses.length ? h('ul', { class: 'addresses' }, addresses) : h('p', { class: 'muted' }, 'Address information is not available right now.'),
       !store.online ? h('p', { class: 'form-error' }, 'The server cannot be reached at the moment. Progress is being kept on this device and will be sent when the connection is back.') : null),
     h('section', { class: 'card' },
-      h('h2', null, 'Player'),
-      row(state.name, 'Someone else wants a turn?', button('Switch player', { kind: 'soft', cls: 'btn-small switch-player', icon: 'sign-out', onclick: async () => { await store.close(); nav.go('/'); } })),
-      row('Delete this player', 'Removes the name and all progress', button('Delete', {
-        kind: 'bad', cls: 'btn-small delete-player', icon: 'trash',
+      h('h2', null, 'Reset'),
+      row('Reset progress', 'Start over: XP, streak, stars and awards go back to zero', button('Reset', {
+        kind: 'bad', cls: 'btn-small reset-progress', icon: 'trash',
         onclick: async () => {
-          if (!await confirmDialog({ title: `Delete ${state.name}?`, text: 'All progress for this player will be removed. This cannot be undone from the app.', yes: 'Delete', danger: true })) return;
-          await store.remove(store.id);
+          if (!await confirmDialog({ title: 'Reset all progress?', text: 'XP, streak, stars, awards and what Fretwise remembers about your notes will start again from zero. This cannot be undone.', yes: 'Reset', danger: true })) return;
+          await store.reset();
+          toast('Progress reset', { icon: 'check-circle' });
           nav.go('/');
         },
       }))),

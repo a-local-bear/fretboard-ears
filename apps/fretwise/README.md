@@ -4,7 +4,7 @@ Bite-sized, game-like lessons that teach you to **sight-read on guitar**: see a 
 its name, know where it lives on the neck — and read rhythms, accidentals, key signatures and real tunes.
 
 It runs on this computer and is reachable from every phone, tablet and laptop on your home network.
-Nothing leaves the network and there are no accounts: pick your name and play.
+Nothing leaves the network and there are no accounts: open it and play.
 
 ## Use it
 
@@ -58,21 +58,21 @@ iPhone/iPad: sound from web pages follows the ring/silent switch — unmute it t
   play a phrase, tap a rhythm with the metronome, "which one did you hear?", theory questions, and more.
 * **19 songs**, all public domain (Ode to Joy, Für Elise, Greensleeves, Minuet in G, Romanza …), learned
   phrase by phrase and kept in a songbook with playback.
-* **The game layer** — XP, levels, a daily goal, streaks, hearts, stars, awards, and a second chance at
+* **The game layer** — XP, levels, a daily goal, streaks, stars, awards, and a second chance at
   every mistake at the end of the lesson.
 * **Memory that adapts** — every note has its own strength that fades with time; lessons and the
   "review weak notes" round lean towards the notes you are shakiest on. The profile page shows the
   whole neck as a memory map.
 * **Practice area** — review, a one-minute sprint, a rhythm gym, the songbook and a tuner.
 * **Already know the basics?** Tap *Jump here* on a later unit and pass a short placement test.
-* Left-handed and "low E on top" fretboard views, light/dark theme, several players with separate progress.
+* Left-handed and "low E on top" fretboard views, light/dark theme; no names or players, one progress that you can reset in Settings.
 
-Progress is stored on this computer (`data/profiles/*.json`), so it follows you from device to device.
+Progress is one anonymous document, stored on this computer (`data/profiles/*.json`), so it follows you from device to device. If a server holds several (older versions kept one per player), the one with the most XP is used.
 If the server is unreachable for a moment, the browser keeps your progress and sends it later.
 
 ## Housekeeping
 
-* **Back up** by copying the `data/profiles` folder. Deleted players are moved to `data/deleted`, not erased.
+* **Back up** by copying the `data/profiles` folder.
 * **Ports**: `PORT=9000 HTTPS_PORT=9443 ./fretwise.sh start` (`HTTPS_PORT=0` switches the secure port off).
 * **Who can reach it**: anyone on your network, without a password — it is meant for a home LAN.
   Do not forward these ports to the internet.
@@ -83,7 +83,7 @@ If the server is unreachable for a moment, the browser keeps your progress and s
 
 Fretwise is one of the apps of the Fretboard Ears repository. It is also published, without this server, at
 https://a-local-bear.github.io/fretboard-ears/fretwise/ — there the app notices that there is no `/api` and keeps
-players and progress in the browser instead (`public/js/store.js`). All addresses in `public/` are relative so
+progress in the browser instead (`public/js/store.js`). All addresses in `public/` are relative so
 the app works from a subfolder.
 
 ```
@@ -108,7 +108,7 @@ node --test
 ```
 
 The end-to-end tests boot the real server and run the real app code inside a small stand-in browser
-(`tests/support/fake-dom.mjs`) — creating a player, playing lessons by "tapping" what is on screen, tapping
+(`tests/support/fake-dom.mjs`) — playing lessons by "tapping" what is on screen, tapping
 rhythms against a virtual clock, and playing notes into a pretend microphone. `tests/support/raster.mjs`
 is a small SVG rasteriser used to eyeball notation and to produce the app icons. Layout in a real browser
 is the one thing these tests cannot see.

@@ -1,5 +1,5 @@
 // The lesson screen: runs a list of exercises one after another, with a
-// progress bar, hearts, instant feedback, and a second chance at mistakes.
+// progress bar, instant feedback, and a second chance at mistakes.
 
 import { h, mount, icon } from './dom.js';
 import { createExercise } from './exercises.js';
@@ -7,7 +7,7 @@ import { audio } from './audio.js';
 import { mic } from './mic.js';
 import { prefs } from './prefs.js';
 import { store } from './store.js';
-import { recordNote, HEARTS } from './progress.js';
+import { recordNote } from './progress.js';
 import { button, mascot, confirmDialog, toast, stars, confetti } from './ui.js';
 import { formatTime, plural } from './util.js';
 
@@ -20,29 +20,25 @@ const pickOne = (list) => list[Math.floor(Math.random() * list.length)];
 
 /**
  * @param host  element to render into
- * @param opts  {exercises, hearts, onComplete(summary), onFail(summary), onExit()}
+ * @param opts  {exercises, onComplete(summary), onExit()}
  */
 export function runLesson(host, opts) {
-  const useHearts = Boolean(opts.hearts);
   const settings = store.state ? store.state.settings : {};
   let input = prefs.get('input') === 'mic' && mic.on ? 'mic' : 'tap';
   // listening exercises make no sense with the sound switched off
   const queue = opts.exercises.filter((ex) => audio.enabled || (ex.type !== 'hearPhrase' && ex.type !== 'rhythmHear'));
   const scored = queue.filter((ex) => ex.type !== 'intro').length;
   const startedAt = performance.now();
-  let index = -1, settled = 0, mistakes = 0, hearts = HEARTS, combo = 0, bestCombo = 0, usedMic = false;
+  let index = -1, settled = 0, mistakes = 0, combo = 0, bestCombo = 0, usedMic = false;
   let view = null, shownAt = 0, autoTimer = null, waiting = false, closed = false;
 
   const fill = h('i');
-  const heartCount = h('b', null, String(hearts));
-  const heartsEl = h('span', { class: 'hearts', title: 'Hearts left' }, icon('heart'), heartCount);
   const body = h('main', { class: 'lesson-body' });
   const foot = h('footer', { class: 'lesson-foot' });
   const root = h('div', { class: 'lesson' },
     h('header', { class: 'lesson-top' },
       button(null, { kind: 'ghost', icon: 'x', cls: 'icon-only quit', title: 'Leave lesson', onclick: quit }),
-      h('div', { class: 'bar', role: 'progressbar', 'aria-label': 'Lesson progress', 'aria-valuemin': 0, 'aria-valuemax': scored }, fill),
-      useHearts ? heartsEl : null),
+      h('div', { class: 'bar', role: 'progressbar', 'aria-label': 'Lesson progress', 'aria-valuemin': 0, 'aria-valuemax': scored }, fill)),
     body, foot);
   mount(host, root);
 
@@ -109,12 +105,6 @@ export function runLesson(host, opts) {
       combo = 0;
       mistakes++;
       audio.sfx('bad');
-      if (useHearts) {
-        hearts = Math.max(0, hearts - 1);
-        heartCount.textContent = String(hearts);
-        heartsEl.classList.add('is-hit');
-        setTimeout(() => heartsEl.classList.remove('is-hit'), 500);
-      }
       // a missed exercise comes back once at the end of the lesson
       if (!ex.retry) queue.push({ ...ex, retry: true }); else settled++;
     }
@@ -132,8 +122,7 @@ export function runLesson(host, opts) {
         h('strong', null, icon(good ? 'check-circle' : 'x-circle'), h('span', null, title),
           good && combo >= 3 ? h('span', { class: 'combo' }, icon('fire'), `${combo} in a row`) : null),
         !good && result.answer ? h('p', null, h('span', { class: 'banner-label' }, 'Answer: '), result.answer) : null,
-        !good && !result.answer && result.tip ? h('p', null, result.tip) : null,
-        !good && useHearts && hearts === 0 ? h('p', null, 'That was your last heart.') : null),
+        !good && !result.answer && result.tip ? h('p', null, result.tip) : null),
       button('Continue', { kind: good ? 'good' : 'bad', cls: 'btn-wide continue', onclick: proceed })));
     if (good && result.auto) autoTimer = setTimeout(proceed, 950);
   }
@@ -142,7 +131,6 @@ export function runLesson(host, opts) {
     if (!waiting || closed) return;
     clearTimeout(autoTimer);
     waiting = false;
-    if (useHearts && hearts === 0) { teardown(); opts.onFail(summary()); return; }
     next();
   }
 
@@ -227,8 +215,8 @@ export function showResults(host, { heading, sub, outcome, summary, onContinue, 
   return { el: root, finish };
 }
 
-/** shown when the hearts run out (or a placement test was not passed) */
-export function showFailed(host, { onRetry, onExit, heading = 'Out of hearts', text = null }) {
+/** shown when a placement test was not passed */
+export function showFailed(host, { onRetry, onExit, heading = 'Not this time', text = null }) {
   mount(host, h('div', { class: 'results results-failed' },
     h('div', { class: 'results-main' },
       mascot('sad', 'mascot-big'),

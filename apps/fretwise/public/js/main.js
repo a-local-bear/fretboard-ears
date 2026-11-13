@@ -9,7 +9,7 @@ import { UNITS, lessonById } from './curriculum.js';
 import { generateLesson, generatePlacement, generateReview, generateRhythmSet } from './generate.js';
 import { completeLesson, completePractice, skipToUnit, isUnlocked, todayXp, streakNow, practisedToday } from './progress.js';
 import { runLesson, showResults, showFailed, session } from './lesson.js';
-import { onboardingView, homeView, profileView, settingsView } from './views.js';
+import { homeView, profileView, settingsView } from './views.js';
 import { practiceView, sprintView, rhythmView, songsView, songView, tunerView } from './practice.js';
 import { toast, mascot } from './ui.js';
 import { clamp, dayKey } from './util.js';
@@ -89,7 +89,6 @@ async function startLesson(lesson) {
   if (mine !== visit) return;
   runLesson(app, {
     exercises: generateLesson(lesson, { state: store.state }),
-    hearts: store.state.settings.hearts,
     onComplete(summary) {
       let outcome;
       store.update((st) => { outcome = completeLesson(st, lesson, summary); });
@@ -100,7 +99,6 @@ async function startLesson(lesson) {
         outcome, summary, onContinue: () => nav.go('/'),
       });
     },
-    onFail() { showFailed(app, { onRetry: () => startLesson(lesson), onExit: () => nav.go('/') }); },
     onExit() { nav.go('/'); },
   });
 }
@@ -110,7 +108,6 @@ function startJump(unit) {
   const LIMIT = 3;
   runLesson(app, {
     exercises: generatePlacement(unit),
-    hearts: false,
     onComplete(summary) {
       if (summary.mistakes > LIMIT) {
         showFailed(app, {
@@ -125,12 +122,11 @@ function startJump(unit) {
       store.flush();
       showResults(app, { heading: `${unit.title} unlocked!`, sub: 'Everything before it now counts as known.', outcome, summary, onContinue: () => nav.go('/') });
     },
-    onFail() {},
     onExit() { nav.go('/'); },
   });
 }
 
-/** a practice round outside the course: no hearts, a fixed XP reward */
+/** a practice round outside the course: a fixed XP reward */
 async function runPractice({ exercises, xp, heading, sub = null, back = '/practice', listen = true }) {
   leave();
   const mine = visit;
@@ -138,14 +134,12 @@ async function runPractice({ exercises, xp, heading, sub = null, back = '/practi
   if (mine !== visit) return;
   runLesson(app, {
     exercises,
-    hearts: false,
     onComplete(summary) {
       let outcome;
       store.update((st) => { outcome = completePractice(st, { xp, seconds: summary.seconds, mic: summary.mic }); });
       store.flush();
       showResults(app, { heading, sub, outcome, summary, onContinue: () => nav.go(back) });
     },
-    onFail() {},
     onExit() { nav.go(back); },
   });
 }
@@ -170,11 +164,6 @@ function finishSprint({ score, wrong, mic: usedMic }) {
 
 function route() {
   leave();
-  if (!store.state) {
-    mic.stop();
-    mount(app, onboardingView(nav));
-    return;
-  }
   const [page, arg] = path().split('/').filter(Boolean);
   if (page !== 'lesson' && page !== 'jump' && page !== 'review' && page !== 'sprint' && page !== 'tuner' && page !== 'song') mic.stop();
   switch (page) {
@@ -229,14 +218,14 @@ async function init() {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') sync(); });
   window.addEventListener('error', (ev) => { console.error(ev.error || ev.message); });
 
-  // arriving from the http address with "?p=<player>": keep the same player on the secure address
+  // arriving from the http address with "?p=<id>": keep the same progress on the secure address
   const handed = new URLSearchParams(window.location.search).get('p');
   if (handed && /^[a-z0-9][a-z0-9-]{0,47}$/.test(handed)) {
     prefs.set('profile', handed);
     window.history.replaceState(null, '', window.location.pathname + window.location.hash);
   }
   store.loadInfo();
-  await store.resume();
+  await store.start();
   route();
 }
 

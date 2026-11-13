@@ -32,8 +32,14 @@ export function httpFetch(url, init = {}) {
   });
 }
 
-export async function bootApp({ microphone = false, secure = false, startDate, staticHost = false } = {}) {
+/**
+ * profiles: saved documents ({id, rev, state}) already on the server; storage: keys already in the browser;
+ * serverDown: the server cannot be reached at all
+ */
+export async function bootApp({ microphone = false, secure = false, startDate, staticHost = false, serverDown = false, profiles = [], storage = {} } = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fretwise-test-'));
+  fs.mkdirSync(path.join(dataDir, 'profiles'), { recursive: true });
+  for (const doc of profiles) fs.writeFileSync(path.join(dataDir, 'profiles', `${doc.id}.json`), JSON.stringify({ updatedAt: Date.now(), ...doc }));
   const app = createApp({ dataDir, log: false });
   const server = http.createServer(app.handler);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -43,7 +49,9 @@ export async function bootApp({ microphone = false, secure = false, startDate, s
 
   const env = installFakeDom({ url: `http://127.0.0.1:${port}/`, microphone, secure, startDate });
   // staticHost: plain file hosting, where every /api address is a 404 page
-  env.fetchImpl = staticHost ? async () => ({ ok: false, status: 404, text: async () => '<h1>Not Found</h1>', json: async () => JSON.parse('<h1>') }) : httpFetch;
+  for (const [key, value] of Object.entries(storage)) env.window.localStorage.setItem(key, value);
+  if (serverDown) env.fetchImpl = () => Promise.reject(new Error('connection refused'));
+  else env.fetchImpl = staticHost ? async () => ({ ok: false, status: 404, text: async () => '<h1>Not Found</h1>', json: async () => JSON.parse('<h1>') }) : httpFetch;
   const root = env.document.createElement('div');
   root.setAttribute('id', 'app');
   env.document.body.append(root);
@@ -163,6 +171,7 @@ export async function bootApp({ microphone = false, secure = false, startDate, s
 
   return {
     env, store, session, port, dataDir, $, $$, need, screen, settle, click, go, answer, proceed, playLesson,
+    async listProfiles() { return (await httpFetch(`http://127.0.0.1:${port}/api/profiles`)).json(); },
     async serverProfile(id = store.id) { return (await httpFetch(`http://127.0.0.1:${port}/api/profiles/${id}`)).json(); },
     async close() { await store.flush(); env.restore(); await new Promise((resolve) => server.close(resolve)); fs.rmSync(dataDir, { recursive: true, force: true }); },
   };

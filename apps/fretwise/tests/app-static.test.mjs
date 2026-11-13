@@ -1,4 +1,4 @@
-// On static hosting (GitHub Pages) there is no server: players and progress live in the browser.
+// On static hosting (GitHub Pages) there is no server: progress lives in the browser.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,13 +10,11 @@ const app = await bootApp({ staticHost: true });
 const { env, store, need, click, go, settle } = app;
 test.after(() => app.close());
 
-test('without a server a player is created and plays in this browser', async () => {
-  assert.match(app.screen(), /Welcome to Fretwise/);
+test('without a server the app opens on the map and plays in this browser', async () => {
+  assert.doesNotMatch(app.screen(), /Welcome|name/i);
+  assert.ok(need('.unit'), 'the learning map is showing');
   assert.equal(store.standalone, true);
-  need('.input').value = 'Kim';
-  await click('.create');
-  await settle(600);
-  assert.match(store.id, /^kim-[0-9a-f]{6}$/);
+  assert.match(store.id, /^player-[0-9a-f]{6}$/);
   await go('/lesson/u1-1');
   await app.playLesson();
   await click('.results .continue');
@@ -39,29 +37,22 @@ test('the settings say where progress lives instead of listing server addresses'
   assert.doesNotMatch(text, /another device/);
 });
 
-test('players can be switched, reopened and deleted', async () => {
-  const kim = store.id;
-  await click('.switch-player');
-  await settle(50);
-  assert.match(app.screen(), /Who is playing\?/);
-  assert.match(need('.player').textContent, /Kim.*15 XP/);
-  await click('.new-player');
-  need('.input').value = 'Ada';
-  await click('.create');
+test('reset progress starts over in the same browser copy', async () => {
+  const id = store.id;
+  await go('/settings');
+  await click('.reset-progress');
+  await click('.modal .btn-bad');
   await settle(600);
-  assert.notEqual(store.id, kim);
-  assert.equal((await store.profiles()).map((p) => p.name).join(), 'Ada,Kim');
-  await store.close();
-  assert.equal(await store.open(kim), true);
-  assert.equal(store.state.xp, 15, 'Kim’s progress is still there');
-  assert.equal(await store.remove(kim), true);
-  assert.equal((await store.profiles()).map((p) => p.name).join(), 'Ada');
-  assert.equal(await store.open(kim), false);
+  assert.equal(store.id, id);
+  assert.equal(store.state.xp, 0);
+  assert.equal(JSON.parse(env.window.localStorage.getItem(`fretwise.save.${id}`)).state.xp, 0);
   env.assertNoErrors();
 });
 
 test('the next visit goes straight to the browser, without asking the network', async () => {
   assert.equal(JSON.parse(env.window.localStorage.getItem('fretwise.device')).standalone, true);
   env.fetchImpl = () => Promise.reject(new Error('offline'));
-  assert.equal((await store.profiles()).length, 1);
+  const saves = [];
+  for (let i = 0; i < env.window.localStorage.length; i++) if (env.window.localStorage.key(i).startsWith('fretwise.save.')) saves.push(i);
+  assert.equal(saves.length, 1, 'one document, however often the app is opened');
 });

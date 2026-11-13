@@ -15,18 +15,21 @@ const DAY = 86400000;
 const at = (iso) => new Date(iso).getTime();
 
 test('a new player starts clean, and damaged saves are repaired', () => {
-  const s = newState('  Ana  ', 'pink');
-  assert.equal(s.name, 'Ana');
-  assert.equal(s.avatar.tone, 'pink');
+  const s = newState();
   assert.equal(s.xp, 0);
+  assert.equal(s.avatar, undefined, 'no colour to pick');
   assert.equal(normalize(null).name, 'Player');
-  const fixed = normalize({ name: 'Bo', xp: 'lots', days: null, streak: { count: 3 }, settings: { goal: 50 }, stats: { lessons: 4 } });
+  const fixed = normalize({ name: 'Bo', avatar: { tone: 'pink' }, xp: 'lots', days: null, streak: { count: 3 }, settings: { goal: 50 }, stats: { lessons: 4 } });
   assert.equal(fixed.xp, 0);
   assert.deepEqual(fixed.days, {});
   assert.equal(fixed.streak.count, 3);
   assert.equal(fixed.streak.lastDay, null);
   assert.equal(fixed.settings.goal, 50);
-  assert.equal(fixed.settings.hearts, true, 'missing settings get their defaults');
+  assert.equal(fixed.settings.leftHanded, false, 'missing settings get their defaults');
+  assert.equal(fixed.avatar, undefined);
+  assert.equal(newState().settings.hearts, undefined, 'there are no hearts');
+  assert.equal('hearts' in normalize({ settings: { hearts: true, goal: 30 } }).settings, false, 'an old save with hearts still loads');
+  assert.equal(normalize({ settings: { hearts: false, goal: 30 } }).settings.goal, 30);
   assert.equal(fixed.stats.lessons, 4);
   assert.equal(fixed.stats.answers, 0);
 });
@@ -40,7 +43,7 @@ test('levels need a little more XP each time', () => {
 });
 
 test('streak: grows on consecutive days, survives until midnight, resets after a gap', () => {
-  const s = newState('x');
+  const s = newState();
   s.settings.goal = 20;
   let r = addXp(s, 10, '2026-03-30');
   assert.deepEqual([r.extended, r.goalReached, s.streak.count], [true, false, 1]);
@@ -66,7 +69,7 @@ test('streak: grows on consecutive days, survives until midnight, resets after a
 });
 
 test('note memory: one sitting is not mastery; spaced practice is', () => {
-  const s = newState('x');
+  const s = newState();
   const t0 = at('2026-01-01T10:00:00');
   assert.equal(noteStrength(s, 's1f0', t0), 0);
   assert.equal(strengthBand(0), 'new');
@@ -104,7 +107,7 @@ test('note memory: one sitting is not mastery; spaced practice is', () => {
 });
 
 test('finishing lessons: XP, stars, unlocking, replay keeps the best result', () => {
-  const s = newState('x');
+  const s = newState();
   const now = at('2026-05-01T18:00:00');
   assert.equal(nextLesson(s).id, 'u1-1');
   assert.equal(isUnlocked(s, LESSONS[0]), true);
@@ -131,7 +134,7 @@ test('finishing lessons: XP, stars, unlocking, replay keeps the best result', ()
 });
 
 test('practice rounds, sprint records and jumping ahead', () => {
-  const s = newState('x');
+  const s = newState();
   const now = at('2026-05-01T18:00:00');
   let r = completePractice(s, { xp: 8, seconds: 60, sprintScore: 21 }, now);
   assert.deepEqual([r.xp, r.record, r.streakExtended], [8, true, true]);
@@ -151,7 +154,7 @@ test('practice rounds, sprint records and jumping ahead', () => {
 test('every award is well formed and can actually be earned', () => {
   assert.equal(new Set(AWARDS.map((a) => a.id)).size, AWARDS.length);
   for (const a of AWARDS) assert.ok(ICONS[a.icon] && a.title && a.text, a.id);
-  const s = newState('x');
+  const s = newState();
   const now = at('2026-06-01T12:00:00');
   assert.deepEqual(grantAwards(s, now), []);
   for (const l of LESSONS) completeLesson(s, l, { mistakes: 0, total: 10, seconds: 60, mic: true }, now);
@@ -166,7 +169,7 @@ test('every award is well formed and can actually be earned', () => {
 });
 
 test('merging two copies of a profile keeps the best of both', () => {
-  const base = newState('x');
+  const base = newState();
   completeLesson(base, LESSONS[0], { mistakes: 2, total: 10, seconds: 60 }, at('2026-07-01T10:00:00'));
   const phone = JSON.parse(JSON.stringify(base)), tablet = JSON.parse(JSON.stringify(base));
   completeLesson(phone, LESSONS[1], { mistakes: 0, total: 10, seconds: 60 }, at('2026-07-02T10:00:00'));

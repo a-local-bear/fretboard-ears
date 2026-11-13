@@ -1,10 +1,12 @@
-// The player's saved progress.  The server keeps one JSON document per player
-// so every device on the network sees the same progress; a copy is also kept in
-// this browser so nothing is lost if the server is briefly unreachable.
+// The saved progress.  There is one anonymous progress document: nobody picks a
+// name or a player.  start() finds it (this device's own, else the one with the
+// most XP, else a fresh one).  The server keeps it as a JSON file so every
+// device on the network shares the same progress; a copy is also kept in this
+// browser so nothing is lost if the server is briefly unreachable.
 //
 // Served as plain files (GitHub Pages) there is no server at all: the first
-// request comes back as a 404 page instead of JSON.  From then on the copies in
-// this browser are the players, and nothing is sent anywhere.
+// request comes back as a 404 page instead of JSON.  From then on the copy in
+// this browser is the progress, and nothing is sent anywhere.
 
 import { newState, normalize, mergeStates } from './progress.js';
 import { prefs } from './prefs.js';
@@ -45,8 +47,7 @@ function local(method, path, body) {
   if (resource !== 'profiles') return reply(404);
   if (!pid) {
     if (method === 'POST') {
-      const slug = String(body.state.name).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'player';
-      const made = { id: `${slug}-${Math.random().toString(16).slice(2, 8).padEnd(6, '0')}`, rev: 1, state: body.state };
+      const made = { id: `player-${Math.random().toString(16).slice(2, 8).padEnd(6, '0')}`, rev: 1, state: body.state };
       try { localStorage.setItem(CACHE + made.id, JSON.stringify({ rev: 1, dirty: false, state: made.state })); } catch { /* storage full or blocked */ }
       return reply(201, made);
     }
@@ -54,13 +55,12 @@ function local(method, path, body) {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       const saved = key.startsWith(CACHE) ? readCache(key.slice(CACHE.length)) : null;
-      if (saved?.state) list.push({ id: key.slice(CACHE.length), rev: saved.rev, name: saved.state.name, avatar: saved.state.avatar ?? null, xp: Number(saved.state.xp) || 0, streak: Number(saved.state.streak?.count) || 0 });
+      if (saved?.state) list.push({ id: key.slice(CACHE.length), rev: saved.rev, xp: Number(saved.state.xp) || 0 });
     }
-    return reply(200, list.sort((a, b) => String(a.name).localeCompare(String(b.name))));
+    return reply(200, list);
   }
   const saved = readCache(pid);
   if (!saved) return reply(404);
-  if (method === 'DELETE') { dropCache(pid); return reply(200); }
   // PUT: save() writes the copy itself once it has the new revision
   return reply(200, { id: pid, rev: method === 'PUT' ? saved.rev + 1 : saved.rev, state: method === 'PUT' ? body.state : saved.state });
 }
@@ -91,8 +91,7 @@ async function save() {
   const pid = id;
   try {
     const r = await request('PUT', `/profiles/${pid}`, { rev, state });
-    if (pid !== id) { /* the player was switched while saving; nothing to update */ }
-    else if (r.ok) { rev = r.data.rev; store.online = true; }
+    if (r.ok) { rev = r.data.rev; store.online = true; }
     else if (r.status === 409) {
       // another device saved first: fold both copies together and try again
       state = mergeStates(state, r.data.state);
@@ -101,9 +100,9 @@ async function save() {
       store.online = true;
       emit('merge');
     } else if (r.status === 404) {
-      // deleted on another device while we were playing: keep the progress under a new id
+      // not on the server (removed there, or made while it was out of reach): keep the progress under a new id
       const made = await request('POST', '/profiles', { state });
-      if (made.ok) { dropCache(pid); id = made.data.id; rev = made.data.rev; prefs.set('profile', id); }
+      if (made.ok) { dropCache(pid); id = made.data.id; rev = made.data.rev; prefs.set('profile', id); store.online = true; }
       else dirty = true;
     } else { dirty = true; store.online = false; }
   } catch {
@@ -115,10 +114,62 @@ async function save() {
   if (dirty && id) schedule(store.online ? 150 : 8000);
 }
 
+async function listProfiles() {
+  const r = await request('GET', '/profiles');
+  if (!r.ok) throw new Error('could not load the saved progress');
+  store.online = true;
+  return r.data;
+}
+
+async function create() {
+  let r = null;
+  try { r = await request('POST', '/profiles', { state: newState() }); } catch { r = null; }
+  if (r && r.ok) { store.online = true; adopt(r.data.id, r.data.rev, r.data.state); return; }
+  // the server is out of reach: work here; the first save that finds no copy on the server creates one
+  store.online = false;
+  adopt(`player-${Math.random().toString(16).slice(2, 8).padEnd(6, '0')}`, 0, newState());
+  dirty = true;
+  writeCache();
+  schedule(8000);
+}
+
+/** Open a saved document.  Returns false if it no longer exists. */
+async function open(pid) {
+  const cached = readCache(pid);
+  let r = null;
+  try { r = await request('GET', `/profiles/${pid}`); } catch { r = null; }
+  if (r && r.ok) {
+    store.online = true;
+    const unsynced = cached && cached.dirty;
+    adopt(pid, r.data.rev, unsynced ? mergeStates(cached.state, r.data.state) : r.data.state);
+    if (unsynced) store.touch(); // push the work that never reached the server last time
+    return true;
+  }
+  if (r && r.status === 404) {
+    if (cached && cached.dirty) { // made while the server was out of reach: keep it, the save will create it there
+      store.online = true;
+      adopt(pid, cached.rev, cached.state);
+      store.touch();
+      return true;
+    }
+    dropCache(pid);
+    if (prefs.get('profile') === pid) prefs.set('profile', null);
+    return false;
+  }
+  if (cached) {
+    store.online = false;
+    adopt(pid, cached.rev, cached.state);
+    dirty = Boolean(cached.dirty);
+    if (dirty) schedule(8000);
+    return true;
+  }
+  throw new Error('the server cannot be reached');
+}
+
 export const store = {
   /** false while the server cannot be reached (progress is kept locally meanwhile) */
   online: true,
-  /** true on static hosting: there is no server, players and progress live in this browser */
+  /** true on static hosting: there is no server, progress lives in this browser */
   standalone: Boolean(prefs.get('standalone')),
   /** server facts: addresses, ports, whether this page is secure */
   info: null,
@@ -134,65 +185,34 @@ export const store = {
     return store.info;
   },
 
-  async profiles() {
-    const r = await request('GET', '/profiles');
-    if (!r.ok) throw new Error('could not load the players');
-    store.online = true;
-    return r.data;
-  },
-
-  async create(name, tone) {
-    const r = await request('POST', '/profiles', { state: newState(name, tone) });
-    if (!r.ok) throw new Error(r.data?.error || 'could not create the player');
-    adopt(r.data.id, r.data.rev, r.data.state);
+  /**
+   * Get the progress document, silently, and never fail:
+   * this device's own, else the one with the most XP, else a fresh one.
+   * With the server out of reach and nothing cached, a fresh one is kept here and
+   * sent to the server by the normal save once it answers.
+   */
+  async start() {
+    const mine = prefs.get('profile');
+    if (mine) { try { if (await open(mine)) return state; } catch { /* look further */ } }
+    let list = [];
+    try { list = await listProfiles(); } catch {
+      list = local('GET', '/profiles').data; // server out of reach: whatever this browser has
+      store.online = false;
+    }
+    list.sort((a, b) => b.xp - a.xp);
+    for (const p of list) { try { if (await open(p.id)) return state; } catch { /* try the next */ } }
+    await create();
     return state;
   },
 
-  /** Open a player.  Returns false if that player no longer exists. */
-  async open(pid) {
-    const cached = readCache(pid);
-    let r = null;
-    try { r = await request('GET', `/profiles/${pid}`); } catch { r = null; }
-    if (r && r.ok) {
-      store.online = true;
-      const unsynced = cached && cached.dirty;
-      adopt(pid, r.data.rev, unsynced ? mergeStates(cached.state, r.data.state) : r.data.state);
-      if (unsynced) store.touch(); // push the work that never reached the server last time
-      return true;
-    }
-    if (r && r.status === 404) { dropCache(pid); if (prefs.get('profile') === pid) prefs.set('profile', null); return false; }
-    if (cached) {
-      store.online = false;
-      adopt(pid, cached.rev, cached.state);
-      dirty = Boolean(cached.dirty);
-      if (dirty) schedule(8000);
-      return true;
-    }
-    throw new Error('the server cannot be reached');
-  },
-
-  /** reopen the player this device used last */
-  async resume() {
-    const pid = prefs.get('profile');
-    if (!pid) return false;
-    try { return await store.open(pid); } catch { return false; }
-  },
-
-  /** switch player: forget who is playing on this device */
-  async close() {
-    await store.flush();
-    state = null;
-    id = null;
-    dirty = false;
-    prefs.set('profile', null);
-    emit('close');
-  },
-
-  async remove(pid) {
-    const r = await request('DELETE', `/profiles/${pid}`);
-    dropCache(pid);
-    if (pid === id) { state = null; id = null; dirty = false; prefs.set('profile', null); emit('close'); }
-    return r.ok;
+  /** start the stats over: a fresh state in the same document (settings are kept) */
+  reset() {
+    if (!state) return Promise.resolve();
+    const fresh = newState();
+    fresh.settings = { ...state.settings };
+    state = fresh;
+    store.touch();
+    return store.flush();
   },
 
   /** change the state (fn mutates it) and save soon */

@@ -9,9 +9,6 @@ const { env, store, need, click, go, settle } = app;
 test.after(() => app.close());
 
 test('progress survives a server outage and is sent when the server is back', async () => {
-  need('.input').value = 'Kim';
-  await click('.create');
-  await settle(600);
   const id = store.id;
   env.fetchImpl = () => Promise.reject(new Error('connection refused'));
   await go('/lesson/u1-1');
@@ -42,19 +39,19 @@ test('work that never reached the server is merged in on the next visit', async 
   stale.dirty = true;
   stale.state.lessons['u1-2'] = { done: 1, stars: 2, best: 0.8, at: 5 };
   env.window.localStorage.setItem(`fretwise.save.${id}`, JSON.stringify(stale));
-  assert.equal(await store.open(id), true);
+  assert.equal(await store.start(), store.state);
   await settle(800);
   assert.ok(store.state.lessons['u1-2'].done);
   assert.ok((await app.serverProfile(id)).state.lessons['u1-2'], 'the leftover progress was pushed to the server');
 });
 
-test('with the server down, a known player can still be opened from this browser', async () => {
+test('with the server down, the progress this browser has still opens', async () => {
   const id = store.id;
   env.fetchImpl = () => Promise.reject(new Error('connection refused'));
-  assert.equal(await store.open(id), true);
+  assert.equal(await store.start(), store.state);
+  assert.equal(store.id, id);
   assert.equal(store.online, false);
-  assert.equal(store.state.name, 'Kim');
-  await assert.rejects(store.open('nobody-123456'), /cannot be reached/);
+  assert.equal(store.state.name, 'Player');
   env.fetchImpl = httpFetch;
   await settle(9000);
 });
@@ -66,7 +63,7 @@ test('a profile deleted on another device is recreated rather than losing the se
   store.update((st) => { st.settings.goal = 50; });
   await settle(1500);
   assert.notEqual(store.id, old);
-  assert.match(store.id, /^kim-/);
+  assert.match(store.id, /^player-/);
   const saved = await app.serverProfile();
   assert.equal(saved.state.settings.goal, 50);
   assert.equal(saved.state.xp, store.state.xp);

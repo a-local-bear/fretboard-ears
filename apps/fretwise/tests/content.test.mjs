@@ -162,7 +162,7 @@ test('generation is deterministic for a seed and adapts to weak notes', () => {
     for (let seed = 0; seed < 60; seed++) for (const e of generateLesson(lesson, { rng: makeRng(seed), state, now: 1e12 })) if (e.note?.key === 's2f3') n++;
     return n;
   };
-  const weak = newState('w'), strong = newState('s');
+  const weak = newState(), strong = newState();
   for (const n of lesson.pool) for (let i = 0; i < 6; i++) { recordNote(weak, n.key, n.key !== 's2f3', 1500, 1e12); recordNote(strong, n.key, true, 1500, 1e12); }
   assert.ok(count(weak) > count(strong) * 1.25, `weak ${count(weak)} vs strong ${count(strong)}`);
 });
@@ -173,7 +173,7 @@ test('placement tests, review rounds and sprints draw on the right notes', () =>
     assert.equal(list.length, 16);
     list.forEach((ex, i) => checkExercise(ex, null, `placement ${unit.id} #${i}`));
   }
-  const state = newState('r');
+  const state = newState();
   assert.equal(generateReview(state), null, 'nothing to review before the first lesson');
   for (const id of ['u1-1', 'u1-2', 'u2-1', 'u2-2']) completeLesson(state, lessonById(id), { mistakes: 0, total: 10, seconds: 60 }, 1e12);
   recordNote(state, 's2f1', false, 0, 1e12);
