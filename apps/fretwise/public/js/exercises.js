@@ -461,7 +461,7 @@ function hearPhraseView(ex, ctx) {
 // Rhythm
 // ---------------------------------------------------------------------------
 /** compare taps with the expected onsets; times are seconds from beat 0 */
-export function judgeTaps(expected, taps, { storedOffset = 0 } = {}) {
+export function judgeTaps(expected, taps, { storedOffset = 0, leeway = 1 } = {}) {
   const got = taps.filter((t) => t > -0.3).sort((a, b) => a - b);
   let minGap = Infinity;
   for (let i = 1; i < expected.length; i++) minGap = Math.min(minGap, expected[i] - expected[i - 1]);
@@ -484,7 +484,7 @@ export function judgeTaps(expected, taps, { storedOffset = 0 } = {}) {
     const devs = rough.pairs.map((p) => p[1]).sort((a, b) => a - b);
     shift = clamp(storedOffset + devs[Math.floor(devs.length / 2)], -0.25, 0.25);
   }
-  const fine = match(shift, Math.min(0.15, minGap * 0.42));
+  const fine = match(shift, Math.min(0.15 * leeway, minGap * 0.42 * leeway, minGap * 0.48));
   const hit = new Set(fine.pairs.map((p) => p[0]));
   const misses = expected.length - hit.size;
   const slack = expected.length >= 8 ? 1 : 0;
@@ -492,6 +492,7 @@ export function judgeTaps(expected, taps, { storedOffset = 0 } = {}) {
 }
 
 function rhythmTapView(ex, ctx) {
+  if (ctx.input === 'mic') return rhythmMicView(ex, ctx);
   const measures = parseMelody(ex.melody);
   const hits = onsets(measures);
   const covers = eventMap(measures);
@@ -577,6 +578,112 @@ function rhythmTapView(ex, ctx) {
       if (ev.key !== ' ' && ev.key !== 'Enter') return false;
       if (phase === 'idle') start(); else tap(ev);
       return true;
+    },
+  };
+}
+
+// How long after a string is plucked the microphone path reports it: the sound reaches the page about this much
+// later than it was made (phone/browser input buffers are typically 10-40 ms).  Onsets are already timed from
+// the start of the sound (see mic.onOnset), so only this fixed input delay is taken off.
+export const MIC_LATENCY = 0.03;
+// the microphone path is a little less exact than a finger on glass, so it gets a wider window than taps
+export const MIC_LEEWAY = 1.3;
+export const MIC_TRIES = 3;
+
+/** the guitar version of the rhythm exercise: hear it, count in, play it, and again by itself if it was off */
+function rhythmMicView(ex, ctx) {
+  const measures = parseMelody(ex.melody);
+  const hits = onsets(measures);
+  const covers = eventMap(measures);
+  const total = totalBeats(measures);
+  const perBar = measureBeats(ex.timeSig);
+  const spb = 60 / ex.bpm;
+  const staff = renderStaff({ measures, timeSig: ex.timeSig, width: ctx.staffWidth, sp: 10, counts: ex.counts });
+  const panel = listenPanel(ctx, 'Pluck each note as it comes. Any string will do; the open 3rd string (G) is the note on the staff.');
+  const status = h('div', { class: 'count-in', 'aria-live': 'polite' }, `♩ = ${ex.bpm}`);
+  let phase = 'demo'; // demo | count | run | review | over
+  let tStart = 0, plucks = [], raf = 0, demo = null, tries = 0, timer = 0;
+  const later = (fn, ms) => { clearTimeout(timer); timer = setTimeout(fn, ms); };
+
+  // the demonstration comes out of the speakers, so nothing is listened to until it is over
+  const off = mic.onOnset((o) => {
+    if (phase !== 'count' && phase !== 'run') return;
+    const rel = o.t - tStart - MIC_LATENCY;
+    if (rel < -Math.min(0.3, spb * 0.45)) return; // the count-in clicks, or a pluck far too early to mean anything
+    plucks.push(rel);
+    panel.say(`${plural(plucks.length, 'pluck')} heard`);
+  });
+
+  function paintAll(state) { hits.forEach((o, i) => { for (const idx of covers[i]) staff.setState(idx, typeof state === 'function' ? state(i) : state); }); }
+
+  function demonstrate() {
+    phase = 'demo';
+    status.textContent = 'Listen first…';
+    paintAll('');
+    demo = playMelody(measures, ex.bpm, staff, { clicks: true, timeSig: ex.timeSig, countIn: true });
+    demo.done.then((played) => { if (played && phase === 'demo') later(countIn, 700); }); // let the sound die away
+  }
+  function countIn() {
+    if (phase === 'over') return;
+    const ac = audio.unlock();
+    const latency = ac ? ac.outputLatency || ac.baseLatency || 0 : 0;
+    const toAudio = ac ? ac.currentTime - perfNow() : 0;
+    tStart = perfNow() + 0.35 + perBar * spb + latency; // the moment beat 0 is heard
+    // clicks for the count-in only: during the rhythm the speakers stay quiet so the microphone hears just the guitar
+    for (let b = -perBar; b < 0; b++) audio.click(tStart - latency + b * spb + toAudio, ((b % perBar) + perBar) % perBar === 0);
+    plucks = [];
+    tries++;
+    phase = 'count';
+    paintAll('');
+    panel.say('Listening. Pluck each note as it comes.');
+    raf = requestAnimationFrame(frame);
+  }
+  function frame() {
+    const beat = (perfNow() - tStart) / spb;
+    if (beat < 0) {
+      const n = Math.floor(beat + perBar) + 1;
+      status.textContent = n >= 1 ? String(n) : 'Ready…';
+    } else if (beat < total) {
+      if (phase === 'count') { phase = 'run'; status.textContent = 'Go!'; }
+      staff.playhead(beat);
+    } else if (beat >= total + 0.45 / spb) { judge(); return; }
+    raf = requestAnimationFrame(frame);
+  }
+  function judge() {
+    phase = 'review';
+    staff.playhead(null);
+    const result = judgeTaps(hits.map((o) => o.t * spb), plucks, { leeway: MIC_LEEWAY });
+    paintAll((i) => (result.hit.has(i) ? 'good' : 'bad'));
+    if (result.correct) return finish(true, null);
+    const parts = [];
+    if (!plucks.length) parts.push('I did not hear any plucks');
+    else {
+      if (result.misses) parts.push(`${plural(result.misses, 'note')} missed or off the beat (red)`);
+      if (result.extras > 1) parts.push(`${result.extras} extra plucks`);
+    }
+    const why = `${cap(parts.join(' and ') || 'the timing drifted')}.`;
+    status.textContent = 'Not quite';
+    if (tries >= MIC_TRIES) return finish(false, `${why} Count out loud and pluck only where a note begins.`);
+    panel.say(`${why} Let's count in again (try ${tries + 1} of ${MIC_TRIES}).`);
+    later(() => (tries === MIC_TRIES - 1 ? demonstrate() : countIn()), 2600);
+  }
+  function finish(correct, tip) {
+    phase = 'over';
+    status.textContent = correct ? 'Right on the beat!' : 'Not quite';
+    ctx.done({ correct, auto: false, notes: [], praise: 'Right on the beat!', tip, mic: true, tries });
+  }
+
+  demonstrate();
+  return {
+    el: h('div', { class: 'ex ex-rhythm' }, prompt('Play this rhythm on your guitar'), h('div', { class: 'card staff-card staff-scroll' }, staff.el), status, panel.el),
+    stop() {
+      phase = 'over';
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
+      off();
+      panel.stop();
+      if (demo) demo.stop();
+      audio.stopAll();
     },
   };
 }

@@ -3,18 +3,42 @@
 // Browsers only hand out the microphone on secure pages (https:// or
 // http://localhost), which is why the server also listens on an https port.
 
-import { createPitchDetector, NoteTracker } from './pitch.js';
+import { createPitchDetector, NoteTracker, OnsetDetector } from './pitch.js';
 import { audio } from './audio.js';
 
 const noteListeners = new Set();
+const onsetListeners = new Set();
+const BLOCK = 256, BLOCKS = 8; // onsets are timed from the newest 8 x 256 samples of every poll
+let onsets = null, lastBlockEnd = 0;
 let stream = null, source = null, analyser = null, sink = null;
 let timer = null, detect = null, buffer = null, tracker = null;
 let state = 'off'; // 'off' | 'starting' | 'on'
+
+/** feed the newest short blocks of the buffer (those not seen by the previous poll) to the onset detector */
+function trackOnsets() {
+  if (!onsets) return;
+  const now = performance.now() / 1000;
+  const rate = analyser.context.sampleRate;
+  const end = buffer.length;
+  for (let k = BLOCKS - 1; k >= 0; k--) {
+    const blockEnd = now - (k * BLOCK) / rate;
+    if (blockEnd <= lastBlockEnd + (BLOCK * 0.5) / rate) continue;
+    let e = 0, d = 0;
+    for (let i = end - (k + 1) * BLOCK; i < end - k * BLOCK; i++) { e += buffer[i] * buffer[i]; const x = buffer[i] - buffer[i - 1]; d += x * x; }
+    lastBlockEnd = blockEnd;
+    for (const o of onsets.push(Math.sqrt(e / BLOCK), blockEnd, Math.sqrt(d / BLOCK))) {
+      // the rise was in the middle of the block that first showed it
+      const onset = { t: o.t - (BLOCK * 0.5) / rate, level: o.level };
+      for (const fn of [...onsetListeners]) fn(onset);
+    }
+  }
+}
 
 function tick() {
   analyser.getFloatTimeDomainData(buffer);
   const frame = detect(buffer);
   mic.level = frame.rms;
+  trackOnsets();
   const note = tracker.push(frame);
   if (note) for (const fn of [...noteListeners]) fn(note);
 }
@@ -61,6 +85,8 @@ export const mic = {
       detect = createPitchDetector(ctx.sampleRate);
       buffer = new Float32Array(analyser.fftSize);
       tracker = new NoteTracker();
+      onsets = new OnsetDetector();
+      lastBlockEnd = 0;
       timer = setInterval(tick, 30);
       state = 'on';
     } catch (err) {
@@ -75,13 +101,23 @@ export const mic = {
     timer = null;
     if (stream) for (const t of stream.getTracks()) t.stop();
     for (const node of [source, analyser, sink]) { try { node?.disconnect(); } catch { /* already gone */ } }
-    stream = source = analyser = sink = tracker = null;
+    stream = source = analyser = sink = tracker = onsets = null;
     state = 'off';
     mic.level = 0;
   },
 
   /** forget the note that is ringing, so the next pluck is reported even if it is the same pitch */
   rearm() { if (tracker) tracker.latched = null; },
+
+  /**
+   * fn({t, level}) is called for every pluck, even the same note again.  `t` is when the sound began, in
+   * seconds on the page clock (performance.now() / 1000); the call itself comes about 0.1 s later, once the
+   * sound has proved to be more than a click.  Returns an unsubscribe function.
+   */
+  onOnset(fn) {
+    onsetListeners.add(fn);
+    return () => onsetListeners.delete(fn);
+  },
 
   /** fn({midi, cents, freq}) is called once for every note played; returns an unsubscribe function */
   onNote(fn) {
