@@ -14,7 +14,7 @@ test('none stays none', () => {
   assert.equal(referenceFor({ ref: 'none', refWhen: 'level' }, 0), 'none');
 });
 
-test('drone: held under the note, but Do while the mic is on', () => {
+test('drone: held under the note, but the root alone while the mic is on', () => {
   assert.equal(referenceFor({ ref: 'drone', refWhen: 'each', mic: false }, 3), 'drone');
   assert.equal(referenceFor({ ref: 'drone', refWhen: 'each', mic: true }, 3), 'do');
   assert.equal(referenceFor({ ref: 'drone', refWhen: 'level', mic: false }, 1), 'none');

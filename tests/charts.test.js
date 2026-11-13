@@ -98,9 +98,9 @@ test('sparse weeks are dotted, full weeks solid', () => {
 test('sparklines are labelled and coloured per note', () => {
   const log = [0, 0, 0, 7, 7, 7].map((n, i) => e(at(2024, 3, 4, 8 + i), n, n));
   const out = noteSparklines(weeklySeries(buildStats(log), at(2024, 3, 5)));
-  assert.match(out, />Do</);
-  assert.match(out, />Sol</);
-  assert.match(out, /aria-label="[^"]*Sol 100%/);
+  assert.match(out, />1</);
+  assert.match(out, />5</);
+  assert.match(out, /aria-label="[^"]*fifth 100%/);
 });
 
 test('progressHTML combines four blocks', () => {

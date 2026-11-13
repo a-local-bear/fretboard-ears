@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ksParams, renderPluck, midiToFreq } from '../js/ks.js';
 import { mulberry32 } from '../js/deck.js';
-import { CHAPTERS, OPEN, midiOf } from '../js/data.js';
+import { POSITIONS, OPEN, midiOf } from '../js/data.js';
 
 test('midiToFreq: A4 = 440 Hz, C4 ≈ 261.63 Hz', () => {
   assert.equal(midiToFreq(69), 440);
@@ -35,20 +35,19 @@ test('rendered buffer is peak-normalised, finite and fades to silence', () => {
   assert.equal(Math.abs(y[y.length - 1]), 0);
 });
 
-test('chapter pitch ranges match the spec', () => {
+test('position pitch ranges match the spec', () => {
   const range = (id) => {
-    const c = CHAPTERS.find((x) => x.id === id);
+    const c = POSITIONS.find((x) => x.id === id);
     return [midiOf(c.notes[0]), midiOf(c.notes[7])];
   };
-  assert.deepEqual(range('one'), [60, 72]); // C4–C5
-  assert.deepEqual(range('pA'), [48, 60]);  // C3–C4
-  assert.deepEqual(range('pB'), [48, 60]);
-  assert.deepEqual(range('pC'), [60, 72]);
+  assert.deepEqual(range('E'), [48, 60]); // C3–C4
+  assert.deepEqual(range('A'), [48, 60]);
+  assert.deepEqual(range('D'), [60, 72]); // C4–C5
   assert.equal(OPEN.length, 6);
 });
 
-test('every chapter is a C major scale (W W H W W W H)', () => {
-  for (const c of CHAPTERS.filter((c) => c.notes.length)) {
+test('every box is a C major scale (W W H W W W H)', () => {
+  for (const c of POSITIONS.filter((c) => c.notes.length)) {
     const m = c.notes.map(midiOf);
     const steps = m.slice(1).map((v, i) => v - m[i]);
     assert.deepEqual(steps, [2, 2, 1, 2, 2, 2, 1], c.id);

@@ -3,17 +3,9 @@
 /** Seconds the player gets to play the note(s) before the answer, counted from the last note. */
 export const GAP_OPTIONS = ['3', '5', '8'];
 
-/** How the speech engine should say each solfège syllable (as English text it reads reliably). */
-const SAY_SOLFEGE = {
-  Do: 'Doe', Ra: 'Rah', Re: 'Ray', Me: 'May', Mi: 'Me', Fa: 'Fah',
-  Se: 'Say', Sol: 'Sole', Le: 'Lay', La: 'Lah', Te: 'Tay', Si: 'See',
-};
-
-/** A note name as words to speak: "Mi'" → "Me", "C♯" → "C sharp", "A" → "Ay" (not the article). */
+/** A letter name as words to speak: "C♯'" → "C sharp", "A" → "Ay" (not the article). Numbers are spoken as data.js degreeWord(). */
 export function spoken(name) {
-  const base = name.replace(/'/g, '');
-  if (SAY_SOLFEGE[base]) return SAY_SOLFEGE[base];
-  return base.replace(/^A/, 'Ay').replace(/♯/g, ' sharp').replace(/♭/g, ' flat');
+  return name.replace(/'/g, '').replace(/^A/, 'Ay').replace(/♯/g, ' sharp').replace(/♭/g, ' flat');
 }
 
 /**

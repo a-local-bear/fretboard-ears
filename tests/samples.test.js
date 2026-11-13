@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { CHAPTERS, CHORDS, midiOf } from '../js/data.js';
+import { POSITIONS, CHORDS, midiOf } from '../js/data.js';
 import { SAMPLE_RANGE, SAMPLE_DIR, midiToName, onsetIndex, hasSample } from '../js/samples.js';
 
 const file = (midi) => new URL(`../${SAMPLE_DIR}/${midi}.mp3`, import.meta.url);
@@ -25,7 +25,7 @@ test('every sample in the range exists and is an MP3', () => {
 });
 
 test('every note the app plays has a sample', () => {
-  const used = CHAPTERS.flatMap((c) => c.notes.map(midiOf)).concat(Object.values(CHORDS).flat());
+  const used = POSITIONS.flatMap((c) => c.notes.map(midiOf)).concat(Object.values(CHORDS).flat());
   for (const m of used) assert.ok(hasSample(m), `MIDI ${m} outside the sample range`);
 });
 

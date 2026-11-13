@@ -1,50 +1,53 @@
 // Daily practice session: a pure planner that turns progress + stats into four blocks of ten rounds.
 //
 // Rules (planSession):
-//  - A brand-new player (no stats, no scores) gets the first C-major levels: Do · Sol, then Do · Mi · Sol,
-//    then Do · Re · Mi · Sol, and a last adaptive block on Do · Mi · Sol.
-//  - Block 1, WARM-UP: the most-played fixed C-major single-note level (log entries per level id, ties go
-//    to the earlier level); with no log, the first major level not yet passed. Always in C major.
-//  - Block 2, WEAK NOTES: adaptive drilling on the narrowest played, non-chromatic fixed-key level that
-//    contains the player's two weakest notes (weakest first, falling back to the weakest one); if no note
-//    is weak enough, the "frontier" (first major level not yet passed).
-//  - Block 3, PAIRS / DICTATION: the first unpassed step of the ladder pairs-1st, pairs-oct, dictation 2…5
-//    (gated: pairs-1st needs a passed major level whose notes include Mi, the rest a passed whole-octave level), else
-//    the hardest dictation. When the gate is not met, the frontier level ("NEW NOTE") instead.
-//  - Block 4, RANDOM KEY: only if a whole-octave C-major level (family major, Do → Do') was passed: the
-//    first unpassed of random-key major/minor, else one of them by the rng. Otherwise another WEAK NOTES
+//  - A brand-new player (no stats, no scores) gets the first three levels: root and fifth, the triad,
+//    the triad with the second, and a last adaptive block on the triad.
+//  - Block 1, WARM-UP: the most-played level of the major build-up (log entries per level id, ties go
+//    to the earlier level); with no log, the frontier if it is one of them, else the whole octave.
+//    Always in C major.
+//  - Block 2, WEAK NOTES: adaptive drilling on the narrowest played one-octave single-note level that
+//    contains the player's two weakest notes (weakest first, falling back to the weakest one); if no
+//    note is weak enough, the frontier.
+//  - Block 3, DICTATION: the first unpassed dictation level of a stage whose whole octave is passed,
+//    else the hardest of those. When no stage has got that far, the frontier ("NEW NOTE") instead.
+//  - Block 4, RANDOM KEY: only once the fixed-key major octave is passed: the first unpassed whole
+//    octave in a random key the player has reached (major, then with chromatic notes, minor, minor
+//    with chromatic notes), else one of the reached ones by the rng. Otherwise another WEAK NOTES
 //    block, aimed at the third and fourth weakest notes.
-// Blocks: { kind, label, chapterId, level (index), levelId, adaptive, keyPc (0 = C major, null = the
+// The frontier is the first single-note level not passed yet (the last one when all are).
+// Blocks: { kind, label, level (index in LEVELS), levelId, adaptive, keyPc (0 = C major, null = the
 // player's chosen key; random-key levels draw their own) }.
 
-import { CHAPTERS, PASS_SCORE, levelsFor, buildContext } from './data.js';
+import { LEVELS, PASS_SCORE, DEFAULT_POSITION, buildContext, levelById } from './data.js';
+import { legacyLevelId } from './progress.js';
 import { weakNotes, foldNote } from './adaptive.js';
 
 export const BLOCKS = 4;
 
 const passed = (best, id) => (best[id] ?? -1) >= PASS_SCORE;
-const suffix = (l) => l.id.slice(l.chapterId.length + 1);
-const allLevels = () => CHAPTERS.flatMap((c) => levelsFor(c.id));
-const isCMajorSingle = (l) => l.family === 'major' && !l.random && !(l.len > 1);
-const wholeOctave = (l) => l.family === 'major' && l.from === 0 && l.to === 12 && !l.random;
+const single = (l) => !(l.len > 1);
+/** The whole-octave level that opens a stage's dictation and its random-key review. */
+const OCTAVES = { major: 'major-rk', majorChrom: 'majorChrom-oct', minor: 'minor-oct', minorChrom: 'minorChrom-oct' };
 
-/** Has a level with this id suffix been passed in any chapter? (the pattern chapter doesn't change the ear work) */
-const passedSuffix = (progress, sfx) => allLevels().some((l) => suffix(l) === sfx && passed(progress, l.id));
-
-/** Played-count per level id from the log. */
+/** Played-count per level id from the log; plays logged before the single ladder count for the level that replaced theirs. */
 function playCounts(log) {
   const m = new Map();
-  for (const e of log || []) if (e && typeof e.lid === 'string') m.set(e.lid, (m.get(e.lid) || 0) + 1);
+  for (const e of log || []) {
+    if (!e || typeof e.lid !== 'string') continue;
+    const id = legacyLevelId(e.lid) ?? e.lid;
+    m.set(id, (m.get(id) || 0) + 1);
+  }
   return m;
 }
 
 const makeBlock = (kind, label, level, { adaptive = false, keyPc = null } = {}) => ({
-  kind, label, chapterId: level.chapterId, level: level.idx, levelId: level.id, adaptive, keyPc,
+  kind, label, level: level.idx, levelId: level.id, adaptive, keyPc,
 });
 
-/** Folded note set of a level in C (or its own mode), for matching weak notes. */
+/** Folded note set of a level (the position does not change it), for matching weak notes. */
 function poolOf(level) {
-  return new Set(buildContext(level.chapterId, level, 0, level.mode ?? 'major').pool.map(foldNote));
+  return new Set(buildContext(DEFAULT_POSITION, level, 0, level.mode ?? 'major').pool.map(foldNote));
 }
 
 /**
@@ -53,69 +56,61 @@ function poolOf(level) {
  */
 export function planSession({ progress, stats, log = [] } = {}, { rng = Math.random } = {}) {
   const best = progress?.best || {};
-  const singles = allLevels().filter(isCMajorSingle); // chapter order, level order
-  const first = singles[0];
+  const singles = LEVELS.filter(single);
+  const buildUp = singles.filter((l) => l.family === 'major' && !l.random);
   const newPlayer = !(stats?.notes > 0) && !Object.keys(best).length;
   if (newPlayer) {
-    const lv = levelsFor(first.chapterId).filter(isCMajorSingle);
     return [
-      makeBlock('warmup', 'WARM-UP', lv[0], { keyPc: 0 }),
-      makeBlock('new', 'NEW NOTE', lv[1]),
-      makeBlock('new', 'NEW NOTE', lv[2]),
-      makeBlock('weak', 'WEAK NOTES', lv[1], { adaptive: true }),
+      makeBlock('warmup', 'WARM-UP', buildUp[0], { keyPc: 0 }),
+      makeBlock('new', 'NEW NOTE', buildUp[1]),
+      makeBlock('new', 'NEW NOTE', buildUp[2]),
+      makeBlock('weak', 'WEAK NOTES', buildUp[1], { adaptive: true }),
     ];
   }
 
-  // The frontier: first major level not passed yet (the last one when all are).
   const frontier = singles.find((l) => !passed(best, l.id)) || singles[singles.length - 1];
 
-  // Block 1: most played.
+  // Block 1: most played level of the build-up.
   const counts = playCounts(log);
   let warm = null;
   let top = 0;
-  for (const l of singles) {
+  for (const l of buildUp) {
     const n = counts.get(l.id) || 0;
     if (n > top) { top = n; warm = l; }
   }
-  warm = warm || frontier;
+  warm = warm || (buildUp.includes(frontier) ? frontier : buildUp[buildUp.length - 1]);
   const blocks = [makeBlock('warmup', 'WARM-UP', warm, { keyPc: 0 })];
 
   // Weak-note blocks.
   const weak = weakNotes(stats || {}, { log }).map((x) => x.note);
-  const playedFixed = allLevels().filter((l) => !l.random && !l.chromatic && !(l.len > 1) && best[l.id] != null);
-  const sizes = new Map(playedFixed.map((l) => [l.id, poolOf(l)]));
+  const played = singles.filter((l) => !l.neck && best[l.id] != null);
+  const sizes = new Map(played.map((l) => [l.id, poolOf(l)]));
   const weakLevel = (targets) => {
     for (const want of [targets, targets.slice(0, 1)]) {
       if (!want.length) continue;
-      const fits = playedFixed.filter((l) => want.every((n) => sizes.get(l.id).has(n)));
+      const fits = played.filter((l) => want.every((n) => sizes.get(l.id).has(n)));
       fits.sort((a, b) => sizes.get(a.id).size - sizes.get(b.id).size || a.idx - b.idx);
       if (fits.length) return fits[0];
     }
     return null;
   };
-  const weakBlock = (targets) => {
-    const lv = weakLevel(targets);
-    return lv ? makeBlock('weak', 'WEAK NOTES', lv, { adaptive: true }) : makeBlock('weak', 'WEAK NOTES', frontier, { adaptive: true });
-  };
+  const weakBlock = (targets) => makeBlock('weak', 'WEAK NOTES', weakLevel(targets) || frontier, { adaptive: true });
   blocks.push(weakBlock(weak.slice(0, 2)));
 
-  // Block 3: pairs / dictation at a fitting step of the ladder, in the warm-up's chapter.
-  const reachesMi = allLevels().some((l) => isCMajorSingle(l) && poolOf(l).has(4) && passed(best, l.id));
-  const octave = allLevels().some((l) => wholeOctave(l) && passed(best, l.id));
-  const ladder = [['pairs-1st', reachesMi], ['pairs-oct', octave], ['dict-2', octave], ['dict-3', octave], ['dict-4', octave], ['dict-5', octave]];
-  const open = ladder.filter(([, ok]) => ok);
+  // Block 3: dictation in the stages whose whole octave is passed.
+  const open = LEVELS.filter((l) => l.len > 1 && passed(best, OCTAVES[l.family]));
   if (open.length) {
-    const step = open.find(([s]) => !passedSuffix(best, s)) || open[open.length - 1];
-    const lv = levelsFor(warm.chapterId).find((l) => suffix(l) === step[0]);
-    blocks.push(makeBlock('seq', lv.family === 'pairs' ? 'DEGREE PAIRS' : 'DICTATION', lv, { adaptive: true }));
+    blocks.push(makeBlock('seq', 'DICTATION', open.find((l) => !passed(best, l.id)) || open[open.length - 1], { adaptive: true }));
   } else {
     blocks.push(makeBlock('new', 'NEW NOTE', frontier));
   }
 
-  // Block 4: random key once whole-octave C major is passed, else more weak-note work.
-  if (octave) {
-    const rks = ['rk-major', 'rk-minor'].map((s) => levelsFor(warm.chapterId).find((l) => suffix(l) === s));
-    const lv = rks.find((l) => !passed(best, l.id)) || rks[Math.floor(rng() * rks.length)];
+  // Block 4: a whole octave in a random key once the fixed-key octave is passed, else more weak-note work.
+  if (passed(best, 'major-6')) {
+    const octaves = Object.values(OCTAVES).map(levelById);
+    const upTo = octaves.filter((l) => l.idx <= frontier.idx || passed(best, l.id));
+    const reached = upTo.length ? upTo : octaves.slice(0, 1); // the major octave is the first to leave the fixed key
+    const lv = reached.find((l) => !passed(best, l.id)) || reached[Math.floor(rng() * reached.length)];
     blocks.push(makeBlock('random', 'RANDOM KEY', lv));
   } else {
     blocks.push(weakBlock(weak.length > 2 ? weak.slice(2, 4) : weak.slice(0, 2)));

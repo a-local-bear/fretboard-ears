@@ -55,7 +55,7 @@ export function detectPitch(buf, sr, { minFreq = 70, maxFreq = 1100, cutoff = 0.
  * Match a detected pitch (fractional MIDI) to a level's notes by note name, any octave.
  * `degreeMidis[d]` is the MIDI of degree d, or undefined when d isn't in the level.
  * Returns { nearest, cents, degree } where degree is null for notes outside the level.
- * Do and Do' share a name: the one closest in pitch wins.
+ * The root and its octave share a pitch class: the one closest in pitch wins.
  * Ids may be any non-negative integer (semitone offsets), so the array can be sparse.
  * With `exact`, only the note in the right octave counts (levels that span several octaves).
  */
@@ -123,80 +123,5 @@ export class NoteTracker {
       return nearest;
     }
     return null;
-  }
-}
-
-// ---------- voice ----------
-// Singing differs from plucking: no onset, a sustained and wobbly tone, and the octave is the singer's
-// own. So the voice is matched by pitch class (any octave) and accepted after a short stable hold.
-
-/** Detector settings for a voice: a vocal range and a lower clarity bar than a guitar string. */
-export const VOICE = { minFreq: 80, maxFreq: 1000, minClarity: 0.85, minRms: 0.008, holdMs: 300, tolCents: 40 };
-
-/** Fractional MIDI of a detectPitch() result if it is a usable voiced frame, else null. */
-export const voiceMidi = (r) =>
-  (r && r.clarity >= VOICE.minClarity && r.rms >= VOICE.minRms ? freqToMidi(r.freq) : null);
-
-/**
- * Signed distance in cents from a fractional MIDI pitch to the nearest note of pitch class `pc`
- * (0 = C … 11 = B), in any octave: always within ±600.
- */
-export const pitchClassCents = (midi, pc) => ((((midi - pc + 6) % 12) + 12) % 12 - 6) * 100;
-
-/** Plain-language cue for a deviation from the target: in tune within `tol` cents, else sharp/flat. */
-export function voiceCue(cents, tol = VOICE.tolCents) {
-  if (Math.abs(cents) <= tol) return 'in tune';
-  if (cents > 0) return cents <= 150 ? 'sharp' : 'too high';
-  return cents >= -150 ? 'flat' : 'too low';
-}
-
-/**
- * Accepts a sung note: the voice must stay within `tolCents` of the target pitch class for `holdMs`
- * (dropouts and wobble out of tolerance shorter than `gapMs` don't break the hold). Also detects a
- * failed attempt: a stretch of singing that ended in silence, or ran on for `maxVoicedMs`, without
- * ever being accepted. Feed it one frame per analysis tick: push(midi | null, tMs).
- */
-export class VoiceHold {
-  constructor({ holdMs = VOICE.holdMs, tolCents = VOICE.tolCents, gapMs = 120, endMs = 400, minVoicedMs = 600, maxVoicedMs = 3000 } = {}) {
-    Object.assign(this, { holdMs, tolCents, gapMs, endMs, minVoicedMs, maxVoicedMs });
-    this.reset(0);
-  }
-
-  /** New target pitch class; frames before `ignoreUntil` (ms) are ignored (e.g. the previous note dying away). */
-  reset(pc, ignoreUntil = -Infinity) {
-    this.pc = pc;
-    this.ignoreUntil = ignoreUntil;
-    this.holdStart = null;
-    this.lastIn = null;
-    this.segStart = null;
-    this.lastVoiced = null;
-  }
-
-  /** Returns { cents (to the target, null if unvoiced), held (ms), done, failed }. */
-  push(midi, t) {
-    const out = { cents: null, held: 0, done: false, failed: false };
-    if (t < this.ignoreUntil) return out;
-    if (midi == null) {
-      if (this.holdStart != null && t - this.lastIn > this.gapMs) this.holdStart = null;
-      if (this.segStart != null && t - this.lastVoiced >= this.endMs) {
-        out.failed = this.lastVoiced - this.segStart >= this.minVoicedMs;
-        this.segStart = null;
-      }
-      return out;
-    }
-    const cents = pitchClassCents(midi, this.pc);
-    out.cents = cents;
-    if (this.segStart == null) this.segStart = t;
-    this.lastVoiced = t;
-    if (Math.abs(cents) <= this.tolCents) {
-      if (this.holdStart == null) this.holdStart = t;
-      this.lastIn = t;
-      out.held = t - this.holdStart;
-      if (out.held >= this.holdMs) { out.done = true; this.segStart = null; return out; }
-    } else if (this.holdStart != null && t - this.lastIn > this.gapMs) {
-      this.holdStart = null;
-    }
-    if (t - this.segStart >= this.maxVoicedMs) { out.failed = true; this.segStart = null; this.holdStart = null; }
-    return out;
   }
 }

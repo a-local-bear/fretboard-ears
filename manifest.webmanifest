@@ -1,7 +1,7 @@
 {
   "name": "Fretboard Ears",
   "short_name": "Fretboard Ears",
-  "description": "Ear training for guitarists: hear a note in C major and find it on the fretboard.",
+  "description": "Ear training for guitarists: hear a note in a key and play it on your guitar.",
   "id": "./",
   "start_url": "./",
   "scope": "./",

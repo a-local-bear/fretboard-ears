@@ -1,7 +1,7 @@
 // Adaptive practice: per-note weights from the stats, and decks drawn with those weights.
 // Pure: pass the stats aggregate (stats.js), optionally the recent log, and a seeded rng.
 //
-// Weight model (per note of a pool; notes are semitone offsets, folded onto Do…Do' like the stats):
+// Weight model (per note of a pool; notes are semitone offsets, folded onto one octave like the stats):
 //   neutral 1.0 when the note has no data; otherwise
 //   weight = FLOOR + MISS_GAIN * (1 - acc) + SLOW_GAIN * slow + confusion bonus
 //   acc  = first-try accuracy, smoothed towards PRIOR_ACC with PRIOR_N imaginary answers, taken from the
@@ -15,7 +15,7 @@
 
 import { arrange } from './deck.js';
 import { notesOf } from './stats.js';
-import { makePhrase } from './phrase.js';
+import { phraseFor } from './phrase.js';
 
 export const FLOOR = 0.5;
 export const NEUTRAL = 1;
@@ -29,7 +29,7 @@ const MIN_HEARD = 3; // fewer answers than this count as "no data" when choosing
 const CONF_GAIN = 4;
 const CONF_CAP = 2;
 
-/** Fold higher octaves onto Do…Do' like stats.js does. */
+/** Fold higher octaves onto the first one (0 … 12) like stats.js does. */
 export const foldNote = (o) => (o <= 12 ? o : o % 12 || 12);
 
 /** Recent per-note numbers from the log: Map note → { n, ok, ms, timed }. */
@@ -142,30 +142,12 @@ function weightedOrder(items, weight, rng) {
     .sort((a, b) => b.key - a.key).map((x) => x.it);
 }
 
-/** Degree-pair deck leaning towards pairs that contain weak notes; no pair twice in a row. */
-export function buildAdaptivePairDeck(pool, weights, rounds = 10, rng = Math.random) {
-  const w = (n) => weights.get(n) ?? NEUTRAL;
-  const all = [];
-  for (const a of pool) for (const b of pool) if (a !== b) all.push([a, b]);
-  if (!all.length) return Array.from({ length: rounds }, () => [pool[0], pool[0]]);
-  const deck = [];
-  while (deck.length < rounds) {
-    for (const p of weightedOrder(all, ([a, b]) => w(a) + w(b), rng)) {
-      const last = deck[deck.length - 1];
-      if (last && last[0] === p[0] && last[1] === p[1]) continue;
-      deck.push(p);
-      if (deck.length === rounds) break;
-    }
-  }
-  return deck;
-}
-
 /** Phrase deck leaning towards phrases with weak notes: candidates are drawn by mean note weight. */
-export function buildAdaptivePhraseDeck(pool, len, weights, rounds = 10, { mode = 'major', rng = Math.random } = {}) {
+export function buildAdaptivePhraseDeck(level, pool, weights, rounds = 10, { mode = 'major', rng = Math.random } = {}) {
   const w = (n) => weights.get(n) ?? NEUTRAL;
   const cands = new Map();
   for (let i = 0; i < rounds * 8; i++) {
-    const p = makePhrase(pool, len, { mode, rng });
+    const p = phraseFor(level, pool, mode, rng);
     cands.set(p.join(), p);
   }
   const ordered = weightedOrder([...cands.values()], (p) => p.reduce((s, n) => s + w(n), 0) / p.length, rng);
@@ -178,9 +160,8 @@ export function buildAdaptivePhraseDeck(pool, len, weights, rounds = 10, { mode 
   return deck;
 }
 
-/** Adaptive deck for any level: the single-note, pair or phrase variant. */
+/** Adaptive deck for any level: single notes, or phrases for a dictation level. */
 export function buildAdaptiveDeckFor(level, pool, weights, rounds, mode, rng = Math.random) {
-  if (level.family === 'pairs') return buildAdaptivePairDeck(pool, weights, rounds, rng);
-  if (level.len > 1) return buildAdaptivePhraseDeck(pool, level.len, weights, rounds, { mode, rng });
-  return buildAdaptiveDeck(pool, weights, rounds, rng, { keepNewest: level.grow != null, newest: level.newest });
+  if (level.len > 1) return buildAdaptivePhraseDeck(level, pool, weights, rounds, { mode, rng });
+  return buildAdaptiveDeck(pool, weights, rounds, rng, { keepNewest: level.newest != null, newest: level.newest });
 }

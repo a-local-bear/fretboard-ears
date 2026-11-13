@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { noteWeights, weakNotes, buildAdaptiveDeck, buildAdaptivePairDeck, buildAdaptivePhraseDeck, buildAdaptiveDeckFor, FLOOR, NEUTRAL } from '../js/adaptive.js';
+import { noteWeights, weakNotes, buildAdaptiveDeck, buildAdaptivePhraseDeck, buildAdaptiveDeckFor, FLOOR, NEUTRAL } from '../js/adaptive.js';
 import { emptyStats, addEntry } from '../js/stats.js';
 import { mulberry32, hasTripleRun } from '../js/deck.js';
-import { levelsFor, buildContext, ROUNDS } from '../js/data.js';
+import { LEVELS, levelById, buildContext, ROUNDS, SCALES } from '../js/data.js';
 import { loadSettings } from '../js/storage.js';
 
 const POOL = [0, 2, 4, 5, 7];
@@ -87,36 +87,40 @@ test('adaptive deck keeps an explicit newest note that is not the top of the poo
     const deck = buildAdaptiveDeck(pool, weights, ROUNDS, mulberry32(seed), { keepNewest: true, newest: 2 });
     assert.ok(deck.filter((d) => d === 2).length >= 2);
   }
-  const lv = levelsFor('one')[2];
+  const lv = levelById('major-t2');
   const deck = buildAdaptiveDeckFor(lv, pool, weights, ROUNDS, 'major', mulberry32(4));
   assert.ok(deck.filter((d) => d === lv.newest).length >= 2);
 });
 
 test('adaptive decks work on every level and respect their shape', () => {
-  for (const level of levelsFor('pA')) {
-    const ctx = buildContext('pA', level, 0, level.mode ?? 'major');
+  for (const level of LEVELS) {
+    const ctx = buildContext('A', level, 0, level.mode ?? 'major');
     const weights = noteWeights(emptyStats(), ctx.pool);
     const deck = buildAdaptiveDeckFor(level, ctx.pool, weights, ROUNDS, ctx.mode, mulberry32(3));
     assert.equal(deck.length, ROUNDS, level.id);
     for (const item of deck) for (const n of [].concat(item)) assert.ok(ctx.pool.includes(n), level.id);
-    if (level.family === 'pairs') assert.ok(deck.every((p) => p.length === 2 && p[0] !== p[1]));
-    if (level.family === 'dictation') assert.ok(deck.every((p) => p.length === level.len));
+    if (level.len > 1) assert.ok(deck.every((p) => p.length === level.len), level.id);
+    else assert.ok(deck.every((n) => Number.isInteger(n)), level.id);
+    // A chromatic dictation level keeps its shape when adaptive: one note from outside the scale.
+    if (level.len > 1 && level.chromatic) {
+      for (const p of deck) assert.equal(p.filter((n) => !SCALES[ctx.mode].includes(n % 12)).length, 1, `${level.id}: ${p}`);
+    }
   }
 });
 
-test('pair and phrase decks lean towards weak notes', () => {
+test('phrase decks lean towards weak notes', () => {
   const pool = [0, 2, 4, 5, 7, 9, 11, 12];
   const weights = new Map(pool.map((n) => [n, n === 5 ? 4 : FLOOR]));
-  let withWeak = 0;
-  let total = 0;
-  let phraseWeak = 0;
-  for (let seed = 1; seed <= 100; seed++) {
-    for (const p of buildAdaptivePairDeck(pool, weights, 10, mulberry32(seed))) { total++; if (p.includes(5)) withWeak++; }
-    for (const p of buildAdaptivePhraseDeck(pool, 3, weights, 10, { rng: mulberry32(seed) })) if (p.includes(5)) phraseWeak++;
-  }
-  // uniformly, 5 is in 14 of the 56 pairs (25%)
-  assert.ok(withWeak / total > 0.4, `pairs ${withWeak / total}`);
-  assert.ok(phraseWeak / 1000 > 0.4, `phrases ${phraseWeak / 1000}`);
+  const even = new Map(pool.map((n) => [n, NEUTRAL]));
+  const share = (w, len) => {
+    let withWeak = 0;
+    for (let seed = 1; seed <= 100; seed++) {
+      for (const p of buildAdaptivePhraseDeck({ len }, pool, w, 10, { rng: mulberry32(seed) })) if (p.includes(5)) withWeak++;
+    }
+    return withWeak / 1000;
+  };
+  assert.ok(share(weights, 3) > 0.4, `three notes ${share(weights, 3)}`);
+  for (const len of [2, 4]) assert.ok(share(weights, len) > share(even, len) + 0.1, `${len} notes: ${share(weights, len)} vs ${share(even, len)}`);
 });
 
 test('the adaptive setting defaults to off', () => {
