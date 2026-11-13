@@ -1,0 +1,15 @@
+{
+  "name": "fretwise",
+  "version": "1.0.0",
+  "description": "A bite-sized, gamified course for learning to sight-read on guitar. Runs on your own machine and is reachable from every device on your network.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  }
+}

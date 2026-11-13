@@ -1,0 +1,26 @@
+name: Bug
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: dropdown
+    id: app
+    attributes:
+      label: App
+      options:
+        - Ear training
+        - Fretwise
+        - Woozy
+        - The site (menu, offline, tooling)
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: What you did, what you saw, and what you expected
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Device and browser

@@ -1,3 +1,8 @@
 .DS_Store
 *.swp
 __pycache__/
+_site/
+node_modules/
+*.log
+# Fretwise and Woozy keep players, songs and progress here when run with their own servers.
+apps/*/data/

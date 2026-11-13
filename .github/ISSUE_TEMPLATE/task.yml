@@ -1,0 +1,26 @@
+name: Task or idea
+description: Something to build or change in one of the apps
+body:
+  - type: dropdown
+    id: app
+    attributes:
+      label: App
+      options:
+        - Ear training
+        - Fretwise
+        - Woozy
+        - The site (menu, offline, tooling)
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What and why
+      description: What should change, and what is it for?
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: How to tell it is finished

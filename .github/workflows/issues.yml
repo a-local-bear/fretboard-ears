@@ -1,0 +1,22 @@
+# Label a new issue with the app chosen in the issue form.
+name: Issues
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = { 'Ear training': 'ear-training', 'Fretwise': 'fretwise', 'Woozy': 'woozy', 'The site (menu, offline, tooling)': 'site' };
+            const answer = /### App\s+([^\n]+)/.exec(context.payload.issue.body || '')?.[1].trim();
+            if (labels[answer]) {
+              await github.rest.issues.addLabels({ ...context.repo, issue_number: context.issue.number, labels: [labels[answer]] });
+            }

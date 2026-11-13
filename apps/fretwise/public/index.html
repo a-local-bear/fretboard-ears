@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fretwise — learn to sight-read on guitar</title>
+<meta name="description" content="Bite-sized lessons that teach you to read music on guitar.">
+<meta name="theme-color" content="#faf5ec" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#16151a" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Fretwise">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="icon" href="img/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="img/icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preload" href="fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+  <div class="boot" role="status">
+    <p>Tuning up…</p>
+  </div>
+</div>
+<noscript><p class="boot-note">Fretwise needs JavaScript to run.</p></noscript>
+<script type="module" src="js/main.js"></script>
+<script nomodule>
+  document.getElementById('app').innerHTML = '<p class="boot-note">This browser is too old for Fretwise. Please use a current version of Chrome, Safari, Firefox or Edge.</p>';
+</script>
+<script>
+  // If the app has not appeared after a while, say so instead of showing "Tuning up…" forever.
+  setTimeout(function () {
+    var boot = document.querySelector('#app .boot');
+    if (boot) boot.innerHTML = '<p>Fretwise could not start in this browser.<br>It needs a browser from 2022 or later (Chrome, Edge, Firefox or Safari 15.4+).<br>If yours is current, reload the page.</p>';
+  }, 8000);
+</script>
+</body>
+</html>
