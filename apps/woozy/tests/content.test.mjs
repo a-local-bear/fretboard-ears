@@ -31,15 +31,15 @@ globalThis.document = {
   createDocumentFragment: () => new FakeEl(),
 };
 
-const { GROOVES, PATTERNS, compile } = await import('../../woozy/js/audio/engine.js');
-const { COOKBOOK } = await import('../../woozy/js/content/cookbook.js');
-const { LESSONS, MODULES } = await import('../../woozy/js/content/curriculum.js');
-const { parseMelody, MELODY_HI, MELODY_LO } = await import('../../woozy/js/music/melody.js');
-const { QUALITIES, SCALES, mod12, parseChord, parseProgression } = await import('../../woozy/js/music/theory.js');
-const { OPEN_MIDI, parseFrets } = await import('../../woozy/js/music/voicings.js');
-const { resolveChords } = await import('../../woozy/js/songs.js');
-const { resolveAbs } = await import('../../woozy/js/ui/progression.js');
-const { parseTab } = await import('../../woozy/js/ui/tab.js');
+const { GROOVES, PATTERNS, compile } = await import('../public/js/audio/engine.js');
+const { COOKBOOK } = await import('../public/js/content/cookbook.js');
+const { LESSONS, MODULES } = await import('../public/js/content/curriculum.js');
+const { parseMelody, MELODY_HI, MELODY_LO } = await import('../public/js/music/melody.js');
+const { QUALITIES, SCALES, mod12, parseChord, parseProgression } = await import('../public/js/music/theory.js');
+const { OPEN_MIDI, parseFrets } = await import('../public/js/music/voicings.js');
+const { resolveChords } = await import('../public/js/songs.js');
+const { resolveAbs } = await import('../public/js/ui/progression.js');
+const { parseTab } = await import('../public/js/ui/tab.js');
 
 const KNOWN_BLOCKS = new Set(['p', 'h', 'callout', 'listen', 'starter', 'chords', 'prog', 'keys', 'rootmap', 'tones', 'scale',
   'rhythm', 'triads', 'tab', 'melody', 'prompt', 'checklist', 'build', 'quiz']);

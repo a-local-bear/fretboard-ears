@@ -2,10 +2,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { GROOVES, PATTERNS, compile } from '../../woozy/js/audio/engine.js';
-import { analyzeMelody, asciiTab, assignFrets, bestPosition, generateMelody, parseMelody, tonicMidi } from '../../woozy/js/music/melody.js';
-import { SCALES, mod12, parseProgression } from '../../woozy/js/music/theory.js';
-import { chordSpans, newSection, newSong, resolveChords, sectionSteps, songToText } from '../../woozy/js/songs.js';
+import { GROOVES, PATTERNS, compile } from '../public/js/audio/engine.js';
+import { analyzeMelody, asciiTab, assignFrets, bestPosition, generateMelody, parseMelody, tonicMidi } from '../public/js/music/melody.js';
+import { SCALES, mod12, parseProgression } from '../public/js/music/theory.js';
+import { chordSpans, newSection, newSong, resolveChords, sectionSteps, songToText } from '../public/js/songs.js';
 
 const chordsFor = (prog, key = 'C', mode = 'major') => resolveChords(key, mode, parseProgression(prog));
 const kinds = (comp, step) => comp.steps[step].map((e) => e.kind);

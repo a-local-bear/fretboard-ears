@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { midiHz, renderPluck } from '../../woozy/js/audio/dsp.js';
+import { midiHz, renderPluck } from '../public/js/audio/dsp.js';
 
 // Deterministic noise so the test is repeatable.
 function lcg(seed = 1) {

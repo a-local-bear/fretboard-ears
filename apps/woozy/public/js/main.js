@@ -173,7 +173,7 @@ function paintSync() {
 
 // ------------------------------------------------------------------- boot ----
 
-// Hosted as one of the apps inside Fretboard Ears (in its woozy/ folder).
+// Hosted as one of the apps of the site (in its woozy/ folder), rather than by its own server at the root.
 const inFretboardEars = /\/woozy\/(index\.html)?$/.test(location.pathname);
 
 async function boot() {

@@ -5,11 +5,11 @@ import { test } from 'node:test';
 import {
   MAJOR_KEYS, MINOR_KEYS, QUALITIES, SCALES, analyzeChord, chordIn, chordNotes, diatonicChords,
   makeKey, mod12, noteName, notePc, palette, parseChord, parseProgression, parseRoman, romanOf,
-} from '../../woozy/js/music/theory.js';
+} from '../public/js/music/theory.js';
 import {
   OPEN_MIDI, bestVoicing, fretsToString, parseFrets, topTriads, voiceProgression, voicingLabels,
   voicingsFor,
-} from '../../woozy/js/music/voicings.js';
+} from '../public/js/music/voicings.js';
 
 test('note names and pitch classes', () => {
   assert.equal(notePc('C'), 0);
