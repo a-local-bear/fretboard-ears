@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { bootApp, classesOnScreen } from './support/driver.mjs';
+import { bootApp, classesOnScreen, httpFetch } from './support/driver.mjs';
 import { LESSONS } from '../public/js/curriculum.js';
 
 const app = await bootApp({ startDate: '2026-11-13T09:00:00' });
@@ -21,29 +21,25 @@ const note = () => {
 };
 test.after(() => app.close());
 
-test('a new visitor is asked for a name and lands on the map', async () => {
-  assert.match(app.screen(), /Welcome to Fretwise/);
-  note();
-  await click('.create');
-  assert.match(need('.form-error').textContent, /name/i, 'an empty name is refused');
-  need('.input').value = '  June  ';
-  await click('.swatch.tone-violet');
-  await click('.segmented button[data-value="30"]');
-  await click('.create');
-  await settle(600);
-  assert.ok(store.state, 'a player exists');
-  assert.equal(store.state.name, 'June');
-  assert.equal(store.state.avatar.tone, 'violet');
-  assert.equal(store.state.settings.goal, 30);
-  assert.match(app.screen(), /June/);
+test('a new visitor lands straight on the map: no name, no setup', async () => {
+  assert.ok(store.state, 'progress exists without anyone asking');
+  assert.doesNotMatch(app.screen(), /Welcome|Who is playing/i);
+  assert.equal($('.input'), null, 'nothing to type');
+  assert.match(need('.today h1').textContent, /^(Good (morning|afternoon|evening)|Still up)!$/);
+  assert.equal(store.state.settings.goal, 20);
   assert.equal($$('.unit').length, 10);
   assert.equal($$('.node').length, LESSONS.length);
   assert.equal($$('.node.is-next').length, 1);
   assert.equal($$('.node.is-locked').length, LESSONS.length - 1);
   note();
+  await settle(600);
   const saved = await app.serverProfile();
-  assert.equal(saved.state.name, 'June');
-  assert.equal(saved.state.settings.goal, 30, 'the goal chosen on the welcome screen reached the server');
+  assert.equal(saved.state.xp, 0, 'the new progress reached the server');
+  assert.equal((await httpFetch(`http://127.0.0.1:${app.port}/api/profiles`).then((r) => r.json())).length, 1);
+  await click('.tab[href="#/settings"]');
+  await click('.segmented button[data-value="30"]');
+  assert.equal(store.state.settings.goal, 30, 'the daily goal is chosen in Settings');
+  await go('/');
 });
 
 test('a locked lesson explains itself; the first lesson starts from the map', async () => {
@@ -90,10 +86,10 @@ test('a flawless first lesson: teaching cards, every exercise type, results, sav
   assert.match(need('.topbar').textContent, /15\/30/);
   const saved = await app.serverProfile();
   assert.equal(saved.state.xp, 15, 'progress reached the server');
-  assert.ok(saved.rev >= 3);
+  assert.ok(saved.rev >= 2);
 });
 
-test('mistakes cost hearts, come back at the end, and lower the stars', async () => {
+test('mistakes come back at the end and lower the stars', async () => {
   await go('/lesson/u1-2');
   const log = await playLesson({ mistakes: 2 });
   assert.equal(log.filter((x) => x.endsWith('!')).length, 2);
@@ -104,19 +100,19 @@ test('mistakes cost hearts, come back at the end, and lower the stars', async ()
   await click('.results .continue');
 });
 
-test('five mistakes end the lesson; nothing is recorded; retry works', async () => {
-  const before = JSON.stringify(store.state.lessons);
+test('a lesson with many mistakes still completes; there are no hearts', async () => {
   await go('/lesson/u1-3');
-  await playLesson({ mistakes: 5 });
-  assert.match(need('.results-failed').textContent, /Out of hearts/);
-  note();
-  assert.equal(JSON.stringify(store.state.lessons), before);
-  await click('.retry');
-  await settle(30);
-  assert.ok(session.active, 'the lesson restarted');
-  const log = await playLesson();
-  assert.ok(log.filter((x) => x === 'rhythmTap').length >= 4, `rhythm lesson has tapping (${log})`);
-  assert.ok(log.includes('rhythmHear'));
+  assert.equal($('.hearts'), null);
+  const log = await playLesson({ mistakes: 8 });
+  assert.ok(log.filter((x) => x.endsWith('!')).length >= 5, 'more than five wrong answers');
+  assert.equal($('.results-failed'), null);
+  assert.match(need('.results h1').textContent, /Lesson complete/);
+  assert.ok(store.state.lessons['u1-3'].done, 'the lesson counted');
+  await click('.results .continue');
+  await go('/lesson/u1-3');
+  const again = await playLesson();
+  assert.ok(again.filter((x) => x === 'rhythmTap').length >= 4, `rhythm lesson has tapping (${again})`);
+  assert.ok(again.includes('rhythmHear'));
   assert.match(need('.results h1').textContent, /Flawless/);
   assert.equal(store.state.lessons['u1-3'].stars, 3);
   await click('.results .continue');
@@ -179,9 +175,10 @@ test('the tabs: practice, profile, settings all render', async () => {
 });
 
 test('settings are saved; microphone mode explains why it needs the secure address', async () => {
+  assert.doesNotMatch(need('.settings').textContent, /heart/i);
   const switches = $$('.settings .switch');
-  await click(switches[0]); // hearts off
-  assert.equal(store.state.settings.hearts, false);
+  await click(switches[1]); // left-handed on
+  assert.equal(store.state.settings.leftHanded, true);
   await click('.segmented button[data-value="50"]');
   assert.equal(store.state.settings.goal, 50);
   await click('.segmented button[data-value="dark"]');
@@ -191,15 +188,15 @@ test('settings are saved; microphone mode explains why it needs the secure addre
   await click('.segmented button[data-value="mic"]');
   await settle(50);
   assert.match(need('.modal').textContent, /secure \(https\) connection/);
-  assert.match(need('.modal .link').getAttribute('href'), /^https:\/\/127\.0\.0\.1:8421\/\?p=june-/);
+  assert.match(need('.modal .link').getAttribute('href'), /^https:\/\/127\.0\.0\.1:8421\/\?p=player-/);
   note();
   await click('.modal .btn');
   assert.equal(need('.segmented button[data-value="tap"]').getAttribute('aria-pressed'), 'true', 'falls back to the fretboard');
   await settle(600);
   const saved = await app.serverProfile();
-  assert.equal(saved.state.settings.hearts, false);
+  assert.equal(saved.state.settings.leftHanded, true);
   assert.equal(saved.state.settings.goal, 50);
-  await click(switches[0]);
+  await click(switches[1]);
   await click('.segmented button[data-value="30"]');
 });
 
@@ -342,42 +339,40 @@ test('two devices saving at once are merged, not overwritten', async () => {
   assert.equal(store.unsaved, false);
 });
 
-test('switching player returns to the list; the player can come back', async () => {
+test('reset progress asks first, then starts the stats over in the same document', async () => {
   await go('/settings');
-  await click('.switch-player');
-  await settle(300);
-  assert.match(app.screen(), /Who is playing/);
-  assert.equal($$('.player').length, 1);
+  assert.doesNotMatch(need('.settings').textContent, /Switch player|Delete/);
+  const id = store.id;
+  const xp = store.state.xp;
+  const goal = store.state.settings.goal;
+  assert.ok(xp > 500);
+  await click('.reset-progress');
   note();
-  await click('.new-player');
-  need('.input').value = 'Sam';
-  await click('.create');
-  await settle(600);
-  assert.equal(store.state.name, 'Sam');
-  assert.equal(store.state.xp, 0);
-  await go('/settings');
-  await click('.delete-player');
+  await click('.modal .btn-soft'); // the "no" button
+  assert.equal(store.state.xp, xp, 'cancelling keeps everything');
+  await click('.reset-progress');
   await click('.modal .btn-bad');
   await settle(600);
-  assert.match(app.screen(), /Who is playing/);
-  assert.equal($$('.player').length, 1, 'Sam is gone');
-  assert.ok(fs.readdirSync(`${app.dataDir}/deleted`).length === 1, 'deleted players are moved aside, not destroyed');
-  await click('.player');
-  await settle(600);
-  assert.equal(store.state.name, 'June');
-  assert.ok(store.state.xp > 500);
+  assert.equal(store.id, id, 'same document');
+  assert.equal(store.state.xp, 0);
+  assert.deepEqual(store.state.lessons, {});
+  assert.equal(store.state.settings.goal, goal, 'settings survive');
+  assert.equal($$('.node.is-locked').length, LESSONS.length - 1, 'back at the start of the map');
+  const saved = await app.serverProfile();
+  assert.equal(saved.state.xp, 0);
+  assert.equal((await httpFetch(`http://127.0.0.1:${app.port}/api/profiles`).then((r) => r.json())).length, 1);
 });
 
 test('every class the app puts on screen has a style rule (or is a known hook)', () => {
   const css = fs.readFileSync(new URL('../public/css/app.css', import.meta.url), 'utf8');
   const styled = new Set([...css.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)].map((m) => m[1]));
   // classes that exist only so scripts and tests can find an element
-  const hooks = new Set(['quit', 'continue', 'next', 'start', 'retry', 'create', 'new-player', 'go', 'back', 'hear', 'start-lesson', 'start-jump', 'cta-icon',
-    'switch-player', 'delete-player', 'play-song', 'stop-song', 'practise-song', 'start-tuner', 'home', 'system', 'clef', 'keysig', 'timesig', 'beam',
+  const hooks = new Set(['quit', 'continue', 'next', 'start', 'retry', 'go', 'back', 'hear', 'start-lesson', 'start-jump', 'cta-icon',
+    'reset-progress', 'play-song', 'stop-song', 'practise-song', 'start-tuner', 'home', 'system', 'clef', 'keysig', 'timesig', 'beam',
     'staff-line', 'ledger', 'stem', 'barline', 'tie', 'rest', 'btn-primary', 'btn-label', 'ex-intro', 'ex-name', 'ex-find', 'ex-pick', 'ex-fret-staff',
     'ex-fret-name', 'ex-pairs', 'ex-phrase', 'ex-hear', 'ex-rhythm', 'ex-mcq', 'banner', 'results-failed', 'pair-r', 'option-wide', 'choice-note',
     'is-show', 'is-pick', 'is-open', 'is-done', 'is-earned-none', 'practice', 'songs', 'song', 'tuner', 'sprint', 'rhythm-gym', 'profile', 'settings',
-    'me', 'ring-goal', 'unit-title', 'player-text', 'link-text', 'results-main', 'fb-cells', 'today-text', 'me-text', 'award', 'day', 'legend', 'unit']);
+    'me', 'ring-goal', 'unit-title', 'link-text', 'results-main', 'fb-cells', 'today-text', 'me-text', 'award', 'day', 'legend', 'unit']);
   const missing = [...seen].filter((c) => !styled.has(c) && !hooks.has(c)).sort();
   assert.deepEqual(missing, [], `classes without any CSS rule: ${missing.join(', ')}`);
   assert.ok(seen.size > 150, `saw ${seen.size} classes`);

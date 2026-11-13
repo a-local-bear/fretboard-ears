@@ -10,9 +10,6 @@ const { env, store, session, $, need, click, go, settle } = app;
 test.after(() => app.close());
 
 test('switching to "my guitar" asks for the microphone and shows a live check', async () => {
-  need('.input').value = 'Robin';
-  await click('.create');
-  await settle(600);
   await go('/settings');
   await click('.segmented button[data-value="mic"]');
   await settle(100);

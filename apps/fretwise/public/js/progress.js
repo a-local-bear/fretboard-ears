@@ -11,17 +11,14 @@ export const GOALS = [
   { xp: 30, name: 'Serious', text: 'three lessons a day' },
   { xp: 50, name: 'Intense', text: 'a proper practice session' },
 ];
-export const TONES = ['teal', 'violet', 'coral', 'blue', 'amber', 'green', 'pink', 'indigo'];
-export const HEARTS = 5;
 
 const LEVEL_TITLES = ['Open String', 'First Fret', 'Note Spotter', 'Steady Picker', 'Fret Walker', 'Sight Reader', 'Tune Smith',
   'Position Shifter', 'Neck Navigator', 'Session Player', 'Fretwise Virtuoso'];
 
-export function newState(name, tone = 'teal') {
+export function newState() {
   return {
     v: 2,
-    name: String(name).trim().slice(0, 40) || 'Player',
-    avatar: { tone },
+    name: 'Player', // the server's save format wants one; the app never shows or asks for it
     createdAt: Date.now(),
     xp: 0,
     days: {},                                     // 'YYYY-MM-DD' -> XP earned that day
@@ -30,19 +27,21 @@ export function newState(name, tone = 'teal') {
     notes: {},                                    // 's1f0' -> {seen, right, run, hl, at, ms}
     stats: { lessons: 0, answers: 0, correct: 0, perfect: 0, seconds: 0, sprintBest: 0, micLessons: 0, practice: 0 },
     awards: {},                                   // award id -> timestamp
-    settings: { goal: 20, hearts: true, leftHanded: false, lowOnTop: false },
+    settings: { goal: 20, leftHanded: false, lowOnTop: false },
   };
 }
 
 /** fill in anything missing so old or hand-edited saves keep working */
 export function normalize(raw) {
-  const base = newState(raw && raw.name ? raw.name : 'Player', raw?.avatar?.tone);
+  const base = newState();
   if (!raw || typeof raw !== 'object') return base;
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
   const num = (v, d = 0) => (Number.isFinite(v) ? v : d);
   const notes = obj(raw.notes);
   // Version 1 let a single sitting push a note's review interval to months; start those over at two days.
   if (!(raw.v >= 2)) for (const n of Object.values(notes)) if (n && n.hl > 2) n.hl = 2;
+  const settings = { ...base.settings, ...obj(raw.settings) };
+  delete settings.hearts; // lives were removed; old saves may still carry the setting
   return {
     ...base,
     createdAt: num(raw.createdAt, base.createdAt),
@@ -53,7 +52,7 @@ export function normalize(raw) {
     notes,
     stats: { ...base.stats, ...obj(raw.stats) },
     awards: obj(raw.awards),
-    settings: { ...base.settings, ...obj(raw.settings) },
+    settings,
   };
 }
 
