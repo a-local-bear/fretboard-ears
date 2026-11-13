@@ -38,8 +38,11 @@ Tip for phones: open the address once, then use the browser's "Add to Home Scree
 
 ### Playing with a real guitar (microphone)
 
-In **Settings → Answer with → My guitar (mic)**, exercises that ask "where is this note?" and all
-songs listen to your guitar instead of waiting for a tap. There is also a tuner under Practice.
+**My guitar (mic)** is the default way to answer (**Settings → Answer with** switches to the on-screen fretboard).
+Lessons then need nothing but the guitar: the teaching cards turn when you play the note they show (or any note),
+every note, phrase and rhythm is played, and each result moves on by itself after a moment — about a second when
+you were right, a little longer when you were not. If the microphone is unavailable or refused, Fretwise says so
+and uses the on-screen fretboard instead. There is also a tuner under Practice.
 
 Browsers only allow microphone access on secure pages, so on any device other than this computer use the
 `https://…:8421` address. The certificate is made by your own machine, so the first visit shows a
@@ -54,8 +57,12 @@ iPhone/iPad: sound from web pages follows the ring/silent switch — unmute it t
 * **63 lessons in 10 units** — the six strings of the open position one at a time, then sharps and flats,
   key signatures, fifth position, and the whole neck to the 12th fret. Rhythm is woven in: quarter/half/whole
   notes, rests, eighths, three-four time, dotted notes, ties, sixteenths and syncopation.
-* **11 kinds of exercise** (plus short teaching cards) — name the note, find it on the fretboard, pick the right staff, match pairs,
-  play a phrase, tap a rhythm with the metronome, "which one did you hear?", theory questions, and more.
+* **Lessons are played, not quizzed.** A short run of teaching cards (what the notes, rests, dots, ties, signs and key
+  signatures mean) is followed by three kinds of exercise, all answered on the guitar: *play one note* read from the
+  staff, *play a phrase* (plain notes, tunes with a rhythm, or a phrase of a real song), and *play a rhythm* after
+  hearing it and a count-in. Two wrong notes on a single note show where it is on the neck; the note then comes back
+  once at the end of the lesson. Accidental lessons are phrases that put the bar-line rule and the natural sign to
+  work. The Practice sprint also has a "name the note" mode.
 * **19 songs**, all public domain (Ode to Joy, Für Elise, Greensleeves, Minuet in G, Romanza …), learned
   phrase by phrase and kept in a songbook with playback.
 * **The game layer** — XP, levels, a daily goal, streaks, stars, awards, and a second chance at
@@ -63,7 +70,7 @@ iPhone/iPad: sound from web pages follows the ring/silent switch — unmute it t
 * **Memory that adapts** — every note has its own strength that fades with time; lessons and the
   "review weak notes" round lean towards the notes you are shakiest on. The profile page shows the
   whole neck as a memory map.
-* **Practice area** — review, a one-minute sprint, a rhythm gym, the songbook and a tuner.
+* **Practice area** — review, a one-minute sprint, a rhythm gym (played on the guitar too), the songbook and a tuner.
 * **Already know the basics?** Tap *Jump here* on a later unit and pass a short placement test.
 * Left-handed and "low E on top" fretboard views, light/dark theme; no names or players, one progress that you can reset in Settings.
 
@@ -109,7 +116,7 @@ node --test
 
 The end-to-end tests boot the real server and run the real app code inside a small stand-in browser
 (`tests/support/fake-dom.mjs`) — playing lessons by "tapping" what is on screen, tapping
-rhythms against a virtual clock, and playing notes into a pretend microphone. `tests/support/raster.mjs`
+rhythms against a virtual clock, and playing whole lessons into a pretend microphone, without a click. `tests/support/raster.mjs`
 is a small SVG rasteriser used to eyeball notation and to produce the app icons. Layout in a real browser
 is the one thing these tests cannot see.
 

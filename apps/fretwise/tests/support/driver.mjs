@@ -79,34 +79,34 @@ export async function bootApp({ microphone = false, secure = false, startDate, s
     const other = (list, good) => list.find((x) => x !== good);
     switch (ex.type) {
       case 'intro':
+        if (lesson.input === 'mic') { // the guitar turns the cards: the card's own note, or any note
+          for (let i = ex.at ?? 0; i < ex.cards.length; i++) {
+            const card = ex.cards[i];
+            await settle(900); // a new card waits a moment before it listens
+            env.mic.play(card.note ? card.note.sounding : 64);
+            await settle(450);
+            env.mic.silence();
+            await settle(250);
+          }
+          return ex;
+        }
         for (let i = 0; i < ex.cards.length; i++) await click('.next');
         return ex;
-      case 'name': case 'fretToName':
+      case 'name': // the Practice sprint
         await click(`.choice[data-id="${right ? ex.answer : other(ex.choices, ex.answer)}"]`);
         break;
       case 'find': {
         if (lesson.input === 'mic') {
           if (right) { env.mic.play(ex.note.sounding); await settle(400); }
-          else { for (let i = 0; i < 2; i++) { env.mic.play(ex.note.sounding + 3); await settle(450); env.mic.silence(); await settle(250); } }
+          else { // two wrong notes show the hint; the exercise waits until the right one is played
+            for (let i = 0; i < 2; i++) { env.mic.play(ex.note.sounding + 3); await settle(450); env.mic.silence(); await settle(250); }
+            env.mic.play(ex.note.sounding);
+            await settle(450);
+          }
           break;
         }
         const wrong = ex.note.f === ex.frets[1] ? ex.note.f - 1 : ex.note.f + 1;
         await click(right ? cell(ex.note.key) : need(`.fb-cell[data-s="${ex.note.s}"][data-f="${Math.max(wrong, ex.frets[0] === 0 ? 0 : ex.frets[0])}"]`));
-        break;
-      }
-      case 'pickStaff': case 'fretToStaff': case 'hearPhrase': case 'rhythmHear':
-      case 'mcq': {
-        const count = ex.options ? ex.options.length : ex.choices.length;
-        const pick = right ? ex.answer : (ex.answer + 1) % count;
-        await click(`${ex.type === 'mcq' ? '.choice' : '.option'}[data-i="${pick}"]`);
-        break;
-      }
-      case 'pairs': {
-        const idOf = (n) => (ex.mode === 'name' ? n.nameId : n.key);
-        if (!right) { // two deliberate mismatches
-          for (let i = 0; i < 2; i++) { await click(`.pair-l[data-k="${idOf(ex.notes[0])}"]`); await click(`.pair-r[data-k="${idOf(ex.notes[1])}"]`); await settle(500); }
-        }
-        for (const n of ex.notes) { await click(`.pair-l[data-k="${idOf(n)}"]`); await click(`.pair-r[data-k="${idOf(n)}"]`); }
         break;
       }
       case 'phrase': {
@@ -127,6 +127,16 @@ export async function bootApp({ microphone = false, secure = false, startDate, s
         break;
       }
       case 'rhythmTap': {
+        if (lesson.input === 'mic') { // no tap: wait for "Go!", then pluck the rhythm (or sit it out)
+          const spb = 60 / ex.bpm;
+          const onsetBeats = theory.onsets(theory.parseMelody(ex.melody)).map((o) => o.t);
+          for (let guard = 0; guard < 4000 && need('.count-in').textContent !== 'Go!'; guard++) await settle(10);
+          const t0 = env.clock.now;
+          if (right) for (const b of onsetBeats) { await settle(Math.max(0, t0 + b * spb * 1000 + 20 - env.clock.now)); env.mic.play(55); }
+          for (let guard = 0; guard < 2000 && !lesson.waiting; guard++) await settle(100);
+          env.mic.silence();
+          break;
+        }
         const beats = theory.onsets(theory.parseMelody(ex.melody));
         const spb = 60 / ex.bpm;
         const perBar = theory.measureBeats(ex.timeSig);
@@ -146,6 +156,28 @@ export async function bootApp({ microphone = false, secure = false, startDate, s
       default: throw new Error(`driver cannot answer exercise type ${ex.type}`);
     }
     return ex;
+  }
+
+  /**
+   * Play the lesson on screen to the end with the guitar alone: no click, no key.  Every banner has to move on
+   * by itself.  mistakes = how many exercises to play wrongly on purpose; returns the types played.
+   */
+  async function guitarLesson({ mistakes = 0, log = [], gaps = [] } = {}) {
+    let wrongLeft = mistakes;
+    for (let guard = 0; session.active && guard < 200; guard++) {
+      const lesson = session.active;
+      const ex = lesson.current;
+      const fail = wrongLeft > 0 && ex.type !== 'intro' && !ex.retry;
+      if (fail) wrongLeft--;
+      log.push(`${ex.type}${ex.retry ? '(retry)' : ''}${fail ? '!' : ''}`);
+      await answer(!fail);
+      const shownAt = env.clock.now;
+      for (let t = 0; t < 30000 && session.active === lesson && lesson.current === ex; t += 50) await settle(50);
+      if (ex.type !== 'intro') gaps.push({ type: ex.type, fail, ms: env.clock.now - shownAt });
+      if (session.active === lesson && lesson.current === ex) throw new Error(`the lesson did not move on by itself after ${ex.type}`);
+    }
+    env.assertNoErrors();
+    return log;
   }
 
   /** press Continue if the feedback banner is waiting */
@@ -170,7 +202,7 @@ export async function bootApp({ microphone = false, secure = false, startDate, s
   }
 
   return {
-    env, store, session, port, dataDir, $, $$, need, screen, settle, click, go, answer, proceed, playLesson,
+    env, store, session, port, dataDir, $, $$, need, screen, settle, click, go, answer, proceed, playLesson, guitarLesson,
     async listProfiles() { return (await httpFetch(`http://127.0.0.1:${port}/api/profiles`)).json(); },
     async serverProfile(id = store.id) { return (await httpFetch(`http://127.0.0.1:${port}/api/profiles/${id}`)).json(); },
     async close() { await store.flush(); env.restore(); await new Promise((resolve) => server.close(resolve)); fs.rmSync(dataDir, { recursive: true, force: true }); },

@@ -16,6 +16,9 @@ export const session = { active: null };
 
 const PRAISE = ['Nice!', 'Correct!', 'Exactly right!', 'You got it!', 'Spot on!', 'Well read!'];
 const OOPS = ['Not quite', 'Almost', 'Let’s look at that one'];
+// how long a result stays up before the next exercise when the player is using the guitar (ms)
+export const MIC_NEXT_RIGHT = 1000;
+export const MIC_NEXT_WRONG = 2500;
 const pickOne = (list) => list[Math.floor(Math.random() * list.length)];
 
 /**
@@ -25,8 +28,7 @@ const pickOne = (list) => list[Math.floor(Math.random() * list.length)];
 export function runLesson(host, opts) {
   const settings = store.state ? store.state.settings : {};
   let input = prefs.get('input') === 'mic' && mic.on ? 'mic' : 'tap';
-  // listening exercises make no sense with the sound switched off
-  const queue = opts.exercises.filter((ex) => audio.enabled || (ex.type !== 'hearPhrase' && ex.type !== 'rhythmHear'));
+  const queue = opts.exercises.slice();
   const scored = queue.filter((ex) => ex.type !== 'intro').length;
   const startedAt = performance.now();
   let index = -1, settled = 0, mistakes = 0, combo = 0, bestCombo = 0, usedMic = false;
@@ -124,7 +126,10 @@ export function runLesson(host, opts) {
         !good && result.answer ? h('p', null, h('span', { class: 'banner-label' }, 'Answer: '), result.answer) : null,
         !good && !result.answer && result.tip ? h('p', null, result.tip) : null),
       button('Continue', { kind: good ? 'good' : 'bad', cls: 'btn-wide continue', onclick: proceed })));
-    if (good && result.auto) autoTimer = setTimeout(proceed, 950);
+    // with the microphone nobody should have to touch the screen: every banner moves on by itself, and a wrong
+    // answer stays long enough to read the tip
+    if (input === 'mic') autoTimer = setTimeout(proceed, good ? MIC_NEXT_RIGHT : MIC_NEXT_WRONG);
+    else if (good && result.auto) autoTimer = setTimeout(proceed, 950);
   }
 
   function proceed() {

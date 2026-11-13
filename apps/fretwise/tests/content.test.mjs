@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { UNITS, LESSONS, lessonById, learnedNotes } from '../public/js/curriculum.js';
 import { SONGS } from '../public/js/songs.js';
 import { generateLesson, generatePlacement, generateReview, sprintQuestion, knownNotes, rhythmBars, nameChoices } from '../public/js/generate.js';
-import { parseMelody, measureBeats, onsets, locate, noteFromKey, parsePitch, WRITTEN_SHIFT } from '../public/js/theory.js';
+import { parseMelody, measureBeats, onsets, locate, noteFromKey, markAccidentals, keyAlterations, WRITTEN_SHIFT } from '../public/js/theory.js';
 import { newState, completeLesson, recordNote } from '../public/js/progress.js';
 import { makeRng } from '../public/js/util.js';
 
@@ -19,7 +19,7 @@ test('the course has a sensible shape', () => {
     assert.ok(l.pool.length >= 2, `${l.id} has notes to work with`);
     for (const n of l.pool) assert.ok(n.f >= l.frets[0] && n.f <= l.frets[1], `${l.id}: ${n.key} outside frets ${l.frets}`);
     if (l.kind === 'notes') assert.ok(l.learn.length > 0, `${l.id} teaches something`);
-    if (l.kind === 'rhythm') assert.ok(l.rhythm && l.mcq && l.intro.length, `${l.id} rhythm data`);
+    if (l.kind === 'rhythm') assert.ok(l.rhythm && l.intro.length && !('mcq' in l), `${l.id} rhythm data`);
   }
   // every string of the open position is covered by the end of unit 6
   const u6 = lessonById('u6-7');
@@ -60,32 +60,15 @@ function checkExercise(ex, lesson, label) {
         if (c.fretboard) for (const m of c.fretboard.marks) if (!(m.f >= c.fretboard.frets[0] && m.f <= c.fretboard.frets[1])) fail(`card mark ${m.s}:${m.f} outside the diagram`);
       }
       break;
-    case 'name': case 'fretToName':
+    case 'name': // only the Practice sprint asks this
       if (!ex.choices.includes(ex.answer)) fail('answer not among choices');
       if (new Set(ex.choices).size !== ex.choices.length) fail('duplicate choices');
       if (ex.choices.length < 3 || ex.choices.length > 7) fail(`odd number of choices (${ex.choices.length})`);
       if (ex.answer !== ex.note.nameId) fail('answer mismatch');
-      if (ex.type === 'fretToName' && !inWindow(ex.note.key, ex.frets)) fail('note outside window');
       break;
     case 'find':
       if (!inWindow(ex.note.key, ex.frets)) fail('note outside window');
       break;
-    case 'pickStaff': case 'fretToStaff': {
-      if (ex.options.length !== 3) fail('needs three options');
-      if (new Set(ex.options.map((o) => o.pitch)).size !== 3) fail('duplicate options');
-      const target = ex.type === 'pickStaff' ? ex.target : ex.note;
-      if (ex.options[ex.answer]?.pitch !== target.pitch) fail('answer index wrong');
-      if (ex.type === 'pickStaff' && ex.options.filter((o) => o.nameId === target.nameId).length !== 1) fail('two options share the target name');
-      for (const o of ex.options) parsePitch(o.pitch);
-      break;
-    }
-    case 'pairs': {
-      if (ex.notes.length < 3 || ex.notes.length > 4) fail('pairs size');
-      const ids = ex.notes.map((n) => (ex.mode === 'name' ? n.nameId : n.key));
-      if (new Set(ids).size !== ids.length) fail('ambiguous pairs');
-      if (new Set(ex.notes.map((n) => n.pitch)).size !== ex.notes.length) fail('two cards look identical');
-      break;
-    }
     case 'phrase': {
       const bars = parseMelody(ex.melody);
       if (ex.timeSig) bars.forEach((bar, i) => { if (Math.abs(sum(bar) - measureBeats(ex.timeSig)) > 1e-9) fail(`bar ${i + 1} has ${sum(bar)} beats`); });
@@ -99,35 +82,11 @@ function checkExercise(ex, lesson, label) {
       });
       break;
     }
-    case 'hearPhrase':
-      if (ex.options.length !== 3 || new Set(ex.options).size !== 3) fail('needs three different options');
-      if (!(ex.answer >= 0 && ex.answer < 3)) fail('answer index');
-      ex.options.forEach((m) => parseMelody(m));
-      break;
     case 'rhythmTap': {
       const bars = parseMelody(ex.melody);
       bars.forEach((bar, i) => { if (Math.abs(sum(bar) - measureBeats(ex.timeSig)) > 1e-9) fail(`bar ${i + 1} has ${sum(bar)} beats`); });
       if (onsets(bars).length < 2) fail('nothing to tap');
       if (!(ex.bpm >= 40 && ex.bpm <= 140)) fail('tempo');
-      break;
-    }
-    case 'rhythmHear': {
-      if (ex.options.length !== 3) fail('needs three options');
-      const sigs = ex.options.map((m) => onsets(parseMelody(m)).map((o) => o.t).join(','));
-      if (new Set(sigs).size !== 3) fail('two options sound the same');
-      if (!(ex.answer >= 0 && ex.answer < 3)) fail('answer index');
-      break;
-    }
-    case 'mcq': {
-      if (!ex.prompt) fail('no prompt');
-      if (ex.choices.length < 2 || ex.choices.length > 4) fail('choice count');
-      if (!(ex.answer >= 0 && ex.answer < ex.choices.length)) fail('answer index');
-      const keys = ex.choices.map((c) => c.label ?? c.symbol ?? c.note);
-      if (keys.some((k) => !k) || new Set(keys).size !== keys.length) fail('choices must be distinct and non-empty');
-      if (ex.visual?.staff) {
-        const bars = parseMelody(ex.visual.staff.melody);
-        if (ex.visual.staff.mark != null && !bars.flat()[ex.visual.staff.mark]) fail('mark out of range');
-      }
       break;
     }
     default: fail(`unknown exercise type ${ex.type}`);
@@ -145,11 +104,15 @@ test('every lesson generates valid exercises, for many random seeds', () => {
       list.forEach((ex, i) => { checkExercise(ex, lesson, `${lesson.id} seed ${seed} #${i} (${ex.type})`); types.add(ex.type); });
       if (lesson.kind === 'notes') {
         // each new note is asked about directly at least once
-        for (const n of lesson.learn) assert.ok(scored.some((e) => (e.note?.key ?? e.target?.key) === n.key), `${lesson.id}: ${n.key} never drilled`);
+        for (const n of lesson.learn) assert.ok(scored.some((e) => e.type === 'find' && e.note.key === n.key), `${lesson.id}: ${n.key} never played alone`);
+        assert.ok(scored.slice(-2).every((e) => e.type === 'phrase'), `${lesson.id}: ends on phrases`);
+        const lens = scored.filter((e) => e.type === 'phrase').map((e) => e.where.length);
+        assert.deepEqual(lens, lens.slice().sort((a, b) => a - b), `${lesson.id}: phrases grow (${lens})`);
+        assert.ok(lens.at(-1) >= 5, `${lesson.id}: longest phrase has ${lens.at(-1)} notes`);
       }
     }
   }
-  for (const t of ['intro', 'name', 'find', 'pickStaff', 'fretToStaff', 'fretToName', 'pairs', 'phrase', 'hearPhrase', 'rhythmTap', 'rhythmHear', 'mcq']) assert.ok(types.has(t), `type ${t} is used`);
+  assert.deepEqual([...types].sort(), ['find', 'intro', 'phrase', 'rhythmTap'], 'lessons are made of playing only');
 });
 
 test('generation is deterministic for a seed and adapts to weak notes', () => {
@@ -170,7 +133,8 @@ test('generation is deterministic for a seed and adapts to weak notes', () => {
 test('placement tests, review rounds and sprints draw on the right notes', () => {
   for (const unit of UNITS.slice(1)) {
     const list = generatePlacement(unit, { rng: makeRng(unit.index) });
-    assert.equal(list.length, 16);
+    assert.equal(list.length, 10);
+    assert.deepEqual([...new Set(list.map((e) => e.type))].sort(), ['find', 'phrase']);
     list.forEach((ex, i) => checkExercise(ex, null, `placement ${unit.id} #${i}`));
   }
   const state = newState();
@@ -178,10 +142,14 @@ test('placement tests, review rounds and sprints draw on the right notes', () =>
   for (const id of ['u1-1', 'u1-2', 'u2-1', 'u2-2']) completeLesson(state, lessonById(id), { mistakes: 0, total: 10, seconds: 60 }, 1e12);
   recordNote(state, 's2f1', false, 0, 1e12);
   const review = generateReview(state, { rng: makeRng(3), now: 1e12 });
-  assert.equal(review.length, 12);
+  assert.equal(review.length, 10);
+  assert.deepEqual([...new Set(review.map((e) => e.type))].sort(), ['find', 'phrase']);
   review.forEach((ex, i) => checkExercise(ex, null, `review #${i}`));
   const allowed = new Set(['s1f0', 's1f1', 's1f3', 's2f0', 's2f1', 's2f3']);
-  for (const ex of review) if (ex.note) assert.ok(allowed.has(ex.note.key), `review asked about unlearned ${ex.note.key}`);
+  for (const ex of review) {
+    if (ex.note) assert.ok(allowed.has(ex.note.key), `review asked about unlearned ${ex.note.key}`);
+    if (ex.where) for (const k of ex.where) assert.ok(allowed.has(k), `review phrase uses unlearned ${k}`);
+  }
   const notes = knownNotes(state);
   assert.equal(notes.length, 6);
   const rng = makeRng(9);
@@ -219,4 +187,97 @@ test('note-name buttons are sensible', () => {
     assert.ok(!c.some((x) => ['E#', 'B#', 'Fb', 'Cb'].includes(x)), `no confusing enharmonics in ${c}`);
     if (n.nameId.length > 1) assert.ok(c.includes(n.nameId[0]), `${n.nameId}: the plain letter is offered too (${c})`);
   }
+});
+
+const PLAYING = new Set(['intro', 'find', 'phrase', 'rhythmTap']);
+
+test('every lesson, the review round and every placement test are made of playing only', () => {
+  const lists = [];
+  for (const lesson of LESSONS) for (let seed = 1; seed <= 8; seed++) lists.push([lesson.id, generateLesson(lesson, { rng: makeRng(seed) })]);
+  for (const unit of UNITS.slice(1)) lists.push([`placement ${unit.id}`, generatePlacement(unit, { rng: makeRng(3) })]);
+  const state = newState();
+  for (const id of ['u1-1', 'u1-2', 'u2-1', 'u2-2']) completeLesson(state, lessonById(id), { mistakes: 0, total: 10, seconds: 60 }, 1e12);
+  lists.push(['review', generateReview(state, { rng: makeRng(4), now: 1e12 })]);
+  for (const [label, list] of lists) for (const ex of list) assert.ok(PLAYING.has(ex.type), `${label}: ${ex.type} is not something to play`);
+  // the old quiz data is gone from the course
+  for (const l of LESSONS) assert.ok(!('mcq' in l) && !('basics' in l), `${l.id} still carries quiz data`);
+});
+
+test('lesson length: a handful of exercises, phrases and rhythms included', () => {
+  for (const lesson of LESSONS) {
+    const n = generateLesson(lesson, { rng: makeRng(2) }).filter((e) => e.type !== 'intro').length;
+    assert.ok(n >= (lesson.kind === 'song' ? 4 : 6) && n <= (lesson.kind === 'song' ? 20 : 14), `${lesson.id} (${lesson.kind}) has ${n} exercises`);
+  }
+});
+
+test('each kind of lesson has its recipe', () => {
+  const shape = (id) => generateLesson(lessonById(id), { rng: makeRng(6) }).filter((e) => e.type !== 'intro');
+  const rhythm = shape('u1-3');
+  assert.ok(rhythm.every((e) => e.type === 'rhythmTap') && rhythm.length >= 5);
+  const bars = rhythm.map((e) => parseMelody(e.melody).length);
+  assert.deepEqual(bars, bars.slice().sort((a, b) => a - b), 'rhythms grow');
+  const tunes = shape('u1-4');
+  assert.ok(tunes.every((e) => e.type === 'phrase' && e.timeSig));
+  const sizes = tunes.map((e) => parseMelody(e.melody).length);
+  assert.deepEqual(sizes, sizes.slice().sort((a, b) => a - b), 'tunes grow');
+  const mix = shape('u2-5');
+  assert.ok(mix.some((e) => e.type === 'phrase' && e.timeSig), 'a mix lesson with a melody spec has tunes with rhythm');
+  assert.ok(mix.some((e) => e.type === 'find') && mix.some((e) => e.type === 'phrase' && !e.timeSig));
+  const keysig = shape('u8-1');
+  const changed = new Set(lessonById('u8-1').pool.filter((n) => n.pitch.alter !== 0).map((n) => n.sounding));
+  assert.ok(keysig.filter((e) => e.type === 'find' && changed.has(e.note.sounding)).length >= 3, 'single notes lean on the notes the key changes');
+  assert.ok(keysig.every((e) => e.keySig === 1));
+  const song = generateLesson(lessonById('u2-3'), { rng: makeRng(1) }).filter((e) => e.type !== 'intro');
+  assert.ok(song.every((e) => e.type === 'phrase' && e.song === 'mary-lamb') && song.at(-1).final);
+});
+
+/** what a printed melody means: the sign on a note, else what the bar line / key signature leaves in force */
+function meaning(melody, keySig = 0) {
+  const bars = markAccidentals(parseMelody(melody), keySig);
+  const key = keyAlterations(keySig);
+  const out = [];
+  for (const bar of bars) {
+    const inBar = {};
+    for (const ev of bar) {
+      if (!ev.pitch) continue;
+      const slot = ev.pitch.letter + ev.pitch.octave;
+      const shown = { '#': 1, b: -1, n: 0 }[ev.acc];
+      const alter = shown !== undefined ? shown : slot in inBar ? inBar[slot] : key[ev.pitch.letter] || 0;
+      inBar[slot] = alter;
+      out.push(alter);
+    }
+  }
+  return out;
+}
+
+test('accidentals phrases: what the player must play is what the notation means', () => {
+  const lesson = lessonById('u7-4');
+  const variants = new Set();
+  for (let seed = 1; seed <= 60; seed++) {
+    const list = generateLesson(lesson, { rng: makeRng(seed) }).filter((e) => e.type !== 'intro');
+    const written = list.filter((e) => e.type === 'phrase' && e.timeSig);
+    assert.ok(written.length >= 5, 'bar-line phrases');
+    for (const ex of written) {
+      const bars = markAccidentals(parseMelody(ex.melody), ex.keySig ?? 0, { explicit: false });
+      const alters = meaning(ex.melody, ex.keySig ?? 0);
+      const hits = onsets(bars);
+      assert.equal(ex.where.length, hits.length);
+      hits.forEach((o, i) => {
+        const n = noteFromKey(ex.where[i]);
+        assert.equal(n.sounding, o.pitch.midi - WRITTEN_SHIFT, `note ${i} of ${ex.melody}`);
+        // the letter and octave are the staff position; the player must apply what the signs mean
+        const plainMidi = o.pitch.midi - o.pitch.alter;
+        assert.equal(n.sounding + WRITTEN_SHIFT, plainMidi + alters[i], `${ex.melody}: note ${i} should sound ${alters[i] > 0 ? 'sharp' : alters[i] < 0 ? 'flat' : 'plain'}`);
+      });
+      // which rule does it exercise?
+      const signs = bars.map((bar) => bar.filter((e) => e.pitch).map((e) => e.acc));
+      if (bars.length === 2) variants.add('next');
+      else if (signs[0].includes('n')) variants.add('natural');
+      else if (hits.length === 4 && hits[0].pitch.midi === hits[2].pitch.midi) { variants.add('same'); assert.equal(signs[0][2], null, 'the repeat carries no sign of its own'); assert.notEqual(signs[0][0], null); }
+      if (bars.length === 2) { assert.equal(signs[1][0], null, 'plain note after the bar line has no sign'); assert.notEqual(hits[0].pitch.alter, hits[3].pitch.alter, 'the note comes back plain'); }
+    }
+    // some single altered notes too
+    assert.ok(list.some((e) => e.type === 'find' && e.note.nameId.length > 1));
+  }
+  assert.deepEqual([...variants].sort(), ['natural', 'next', 'same']);
 });

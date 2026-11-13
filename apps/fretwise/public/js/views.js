@@ -109,7 +109,7 @@ function jumpSheet(unit, nav) {
     cls: `sheet tone-${unit.tone}`,
     title: `Jump to ${unit.title}?`,
     body: [
-      h('p', null, 'Already know the earlier material? Take a 16-question test on everything that comes before this unit.'),
+      h('p', null, 'Already know the earlier material? Play a short test on everything that comes before this unit.'),
       h('p', { class: 'sheet-note' }, icon('flag-checkered'), h('span', null, 'Pass with three mistakes or fewer and every earlier lesson is unlocked.')),
     ],
     actions: (close) => [
@@ -247,7 +247,7 @@ export function settingsView(nav) {
   const row = (title, text, control) => h('div', { class: 'row' }, h('div', { class: 'row-text' }, h('strong', null, title), text ? h('small', null, text) : null), control);
 
   const inputControl = segmented(
-    [{ value: 'tap', label: 'On-screen fretboard' }, { value: 'mic', label: 'My guitar (mic)' }], prefs.get('input'),
+    [{ value: 'tap', label: 'On-screen fretboard' }, { value: 'mic', label: 'My guitar (mic)' }], prefs.get('input') === 'mic' && mic.supported ? 'mic' : 'tap',
     async (value) => {
       if (value === 'tap') { prefs.set('input', 'tap'); mic.stop(); return; }
       if (!mic.supported) { prefs.set('input', 'tap'); nav.refresh(); micHelp(); return; }
@@ -280,7 +280,7 @@ export function settingsView(nav) {
       row('Daily goal', 'How much XP you aim for each day', segmented(GOALS.map((g) => ({ value: g.xp, label: String(g.xp) })), state.settings.goal, (v) => set((x) => { x.goal = Number(v); }), 'Daily goal'))),
     h('section', { class: 'card' },
       h('h2', null, 'On this device'),
-      row('Answer with', 'Tap the fretboard on screen, or let Fretwise listen to your guitar', inputControl),
+      row('Answer with', 'Let Fretwise listen to your guitar, or tap the fretboard on screen', inputControl),
       row('Sound', 'Notes, the metronome and feedback sounds', toggle(prefs.get('sound'), (v) => { prefs.set('sound', v); audio.setEnabled(v); if (v) { audio.unlock(); audio.sfx('pop'); } }, 'Sound')),
       row('Appearance', null, segmented([{ value: 'auto', label: 'Auto' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }], prefs.get('theme'), (v) => { prefs.set('theme', v); applyTheme(); }, 'Appearance'))),
     h('section', { class: 'card' },

@@ -33,7 +33,7 @@ const nav = {
   runPractice,
   finishSprint,
   startRhythm(lesson) {
-    runPractice({ exercises: generateRhythmSet(lesson), xp: 8, heading: 'Rhythm workout done!', back: '/rhythm', listen: false });
+    runPractice({ exercises: generateRhythmSet(lesson), xp: 8, heading: 'Rhythm workout done!', back: '/rhythm' });
   },
 };
 
@@ -85,7 +85,7 @@ function shell(view, tab) {
 
 async function startLesson(lesson) {
   const mine = visit;
-  if (lesson.kind === 'rhythm') mic.stop(); else await ensureMic(); // tapping lessons never need the microphone
+  await ensureMic();
   if (mine !== visit) return;
   runLesson(app, {
     exercises: generateLesson(lesson, { state: store.state }),
@@ -104,8 +104,11 @@ async function startLesson(lesson) {
 }
 
 /** the test for jumping ahead to a unit */
-function startJump(unit) {
+async function startJump(unit) {
   const LIMIT = 3;
+  const mine = visit;
+  await ensureMic();
+  if (mine !== visit) return;
   runLesson(app, {
     exercises: generatePlacement(unit),
     onComplete(summary) {
@@ -127,10 +130,10 @@ function startJump(unit) {
 }
 
 /** a practice round outside the course: a fixed XP reward */
-async function runPractice({ exercises, xp, heading, sub = null, back = '/practice', listen = true }) {
+async function runPractice({ exercises, xp, heading, sub = null, back = '/practice' }) {
   leave();
   const mine = visit;
-  if (listen) await ensureMic(); else mic.stop();
+  await ensureMic();
   if (mine !== visit) return;
   runLesson(app, {
     exercises,

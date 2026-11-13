@@ -1,7 +1,7 @@
 // One view per exercise type.  A view is {el, start?, stop?, key?}; it reports
 // its outcome exactly once through ctx.done({correct, answer, tip, notes, auto, ...}):
 //   answer = the right answer (shown after a mistake), tip = a remark shown instead,
-//   notes = [{key, correct}] for the per-note memory, auto = may move on without a tap.
+//   notes = [{key, correct}] for the per-note memory, auto = may move on without a tap (with the microphone every result does).
 //
 // ctx (provided by the lesson runner):
 //   width     usable content width in px (a fretboard may be this wide)
@@ -15,12 +15,11 @@
 import { h, mount, icon } from './dom.js';
 import { renderStaff, symbolSvg } from './notation.js';
 import { createFretboard } from './fretboard.js';
-import { parseMelody, onsets, timeline, OPEN, describePos, describeStep, noteFromKey, pitchName, spell, measureBeats, shortPos, WRITTEN_SHIFT } from './theory.js';
+import { parseMelody, onsets, timeline, OPEN, describePos, noteFromKey, pitchName, spell, measureBeats, WRITTEN_SHIFT } from './theory.js';
 import { audio } from './audio.js';
 import { mic } from './mic.js';
 import { prefs } from './prefs.js';
 import { button, noteLabel, mascot } from './ui.js';
-import { SYMBOLS } from './generate.js';
 import { clamp, plural } from './util.js';
 
 const prompt = (...content) => h('h2', { class: 'prompt' }, content);
@@ -101,8 +100,10 @@ function listenPanel(ctx, text) {
 // ---------------------------------------------------------------------------
 // Teaching cards
 // ---------------------------------------------------------------------------
+const CARD_DELAY = 700; // ms before a new teaching card listens for a note
+
 function introView(ex, ctx) {
-  let index = 0;
+  let index = ex.at ?? 0; // kept on the exercise so a switch to taps in the middle does not start the cards over
   const stage = h('div', { class: 'intro-stage' });
   const dots = h('div', { class: 'dots', 'aria-hidden': 'true' }, ex.cards.map(() => h('i')));
 
@@ -112,10 +113,13 @@ function introView(ex, ctx) {
       const staff = flashcard(card.note.pitch, ctx, {}, { sp: 11 });
       const fb = board(ctx, card.frets, null);
       fb.mark(card.note.s, card.note.f, 'show', card.note.name);
-      const hear = () => audio.pluck(card.note.sounding);
+      const hear = () => {
+        audio.pluck(card.note.sounding);
+        if (panel) deafen(); // the microphone would hear the speakers and take the sound for the player's note
+      };
       out.push(h('div', { class: 'card staff-card' }, staff.el), h('div', { class: 'fb-wrap' }, fb.el),
         button('Hear it', { kind: 'soft', icon: 'speaker-high', cls: 'btn-small hear', onclick: hear }));
-      if (audio.context && audio.context.state === 'running') hear();
+      if (!panel && audio.context && audio.context.state === 'running') hear(); // with a microphone the player starts the sound
     }
     if (card.staff) {
       const st = card.staff;
@@ -147,12 +151,50 @@ function introView(ex, ctx) {
       visuals(card));
     [...dots.children].forEach((d, i) => d.classList.toggle('is-on', i === index));
     ctx.setFooter(button(index < ex.cards.length - 1 ? 'Continue' : 'Start practising', { cls: 'btn-wide next', onclick: next }));
+    if (panel) listenFor(card);
   }
   function next() {
-    if (index < ex.cards.length - 1) { index++; render(); } else { ctx.setFooter(null); ctx.done({ skip: true }); }
+    if (index < ex.cards.length - 1) { index++; ex.at = index; render(); } else { ctx.setFooter(null); ctx.done({ skip: true }); }
   }
-  const el = h('div', { class: 'ex ex-intro' }, stage, ex.cards.length > 1 ? dots : null);
-  return { el, start: render, key: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { next(); return true; } return false; } };
+
+  // With the microphone a card moves on when its note (or, on other cards, any note) is played.  A note that
+  // is still ringing from the last card, or one that arrives right after a card appears, does not count, so
+  // a single pluck cannot skip several cards.
+  function listenFor(card) {
+    clearTimeout(armTimer);
+    clearTimeout(ringTimer);
+    armed = false;
+    ringing = mic.current ? mic.current.midi : null;
+    armTimer = setTimeout(() => { armed = true; }, CARD_DELAY);
+    ringTimer = setTimeout(() => { ringing = null; }, CARD_DELAY * 2);
+    panel.say(card.note ? 'Play it to continue — it is marked on the diagram.' : 'Play any note to continue.');
+  }
+  function deafen() {
+    armed = false;
+    clearTimeout(armTimer);
+    armTimer = setTimeout(() => { armed = true; }, 1800);
+  }
+  function played(n) {
+    if (!armed || (ringing !== null && n.midi === ringing)) return;
+    const card = ex.cards[index];
+    if (card.note && n.midi !== card.note.sounding) {
+      panel.say(`I heard ${pitchName(spell(n.midi))}. This card is about ${card.note.name} — play it to continue.`);
+      return;
+    }
+    next();
+  }
+  const panel = ctx.input === 'mic' ? listenPanel(ctx, '') : null;
+  let armed = false, ringing = null, armTimer = 0, ringTimer = 0, ringPoll = 0, off = null;
+  if (panel) {
+    off = mic.onNote(played);
+    ringPoll = setInterval(() => { if (!mic.current) ringing = null; }, 100);
+  }
+  const el = h('div', { class: 'ex ex-intro' }, stage, ex.cards.length > 1 ? dots : null, panel ? panel.el : null);
+  return {
+    el, start: render,
+    key: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { next(); return true; } return false; },
+    stop() { if (off) off(); if (panel) panel.stop(); clearInterval(ringPoll); clearTimeout(armTimer); clearTimeout(ringTimer); },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -216,143 +258,34 @@ function findView(ex, ctx) {
 function playNoteView(ex, ctx) {
   const staff = flashcard(ex.note.pitch, ctx, ex);
   const panel = listenPanel(ctx, 'Listening — play this note on your guitar.');
-  let over = false, strikes = 0;
+  const where = h('div', { class: 'fb-wrap' });
+  let over = false, strikes = 0, hinted = false;
   const finish = (correct) => {
     if (over) return;
     over = true;
     staff.setState(0, correct ? 'good' : 'bad');
     ctx.done({ correct, auto: true, answer: answerLine(ex.note), notes: [{ key: ex.note.key, correct }], mic: true });
   };
+  // after two wrong notes: show where it is and keep listening until it is played (it then counts as missed)
+  const hint = () => {
+    hinted = true;
+    const fb = board(ctx, ex.frets, null);
+    fb.mark(ex.note.s, ex.note.f, 'show', ex.note.name);
+    mount(where, fb.el);
+    panel.say(`It is on the ${describePos(ex.note)}. Play it to carry on.`);
+  };
   const off = mic.onNote((n) => {
     if (over) return;
-    if (n.midi === ex.note.sounding) finish(true);
+    if (n.midi === ex.note.sounding) finish(!hinted);
     else if ((n.midi - ex.note.sounding) % 12 === 0) panel.say(`That was ${pitchName(spell(n.midi))} in a different octave — look where the note sits on the staff.`);
-    else if (++strikes >= 2) finish(false);
+    else if (hinted) panel.say(`I heard ${pitchName(spell(n.midi))}. The note is on the ${describePos(ex.note)}.`);
+    else if (++strikes >= 2) hint();
     else panel.say(`I heard ${pitchName(spell(n.midi))}. Have one more go.`);
   });
   staff.setState(0, 'active');
   return {
-    el: h('div', { class: 'ex ex-find' }, prompt('Play this note on your guitar'), h('div', { class: 'card staff-card' }, staff.el), panel.el),
+    el: h('div', { class: 'ex ex-find' }, prompt('Play this note on your guitar'), h('div', { class: 'card staff-card' }, staff.el), panel.el, where),
     stop() { off(); panel.stop(); },
-  };
-}
-
-function staffOptions(ex, ctx, onPick, { row = true } = {}) {
-  const buttons = ex.options.map((o, i) => {
-    const staff = flashcard(o.pitch, { width: 150 }, ex, { sp: 9, minWidth: 104 });
-    return h('button', { class: 'option', type: 'button', dataset: { i }, 'aria-label': `Option ${i + 1}`, onclick: () => onPick(i) }, staff.el);
-  });
-  const reveal = (picked) => buttons.forEach((b, i) => {
-    b.disabled = true;
-    if (i === ex.answer) b.classList.add('is-good'); else if (i === picked) b.classList.add('is-bad');
-  });
-  const key = (ev) => { const i = Number(ev.key) - 1; if (!(i >= 0 && i < buttons.length)) return false; onPick(i); return true; };
-  return { el: h('div', { class: row ? 'options options-row' : 'options' }, buttons), reveal, key };
-}
-
-function pickStaffView(ex, ctx) {
-  let over = false;
-  const options = staffOptions(ex, ctx, (i) => {
-    if (over) return;
-    over = true;
-    const correct = i === ex.answer;
-    options.reveal(i);
-    ctx.done({
-      correct, auto: true, notes: ex.target.key ? [{ key: ex.target.key, correct }] : [],
-      answer: [noteLabel(ex.target.nameId), ` sits ${describeStep(ex.target.step)}`],
-    });
-  });
-  return { el: h('div', { class: 'ex ex-pick' }, prompt('Which one is ', noteLabel(ex.target.nameId), '?'), options.el), key: options.key };
-}
-
-function fretToStaffView(ex, ctx) {
-  let over = false;
-  const fb = board(ctx, ex.frets, null);
-  fb.mark(ex.note.s, ex.note.f, 'show');
-  const options = staffOptions(ex, ctx, (i) => {
-    if (over) return;
-    over = true;
-    const correct = i === ex.answer;
-    options.reveal(i);
-    fb.mark(ex.note.s, ex.note.f, correct ? 'good' : 'show', ex.note.name);
-    ctx.done({ correct, auto: true, answer: answerLine(ex.note), notes: [{ key: ex.note.key, correct }] });
-  });
-  return {
-    el: h('div', { class: 'ex ex-fret-staff' }, prompt('How is this note written?'), h('div', { class: 'fb-wrap' }, fb.el), options.el),
-    start() { audio.pluck(ex.note.sounding, { gain: 0.6 }); },
-    key: options.key,
-  };
-}
-
-function fretToNameView(ex, ctx) {
-  let over = false;
-  const fb = board(ctx, ex.frets, null);
-  fb.mark(ex.note.s, ex.note.f, 'show');
-  const choices = nameButtons(ex, (id) => {
-    if (over) return;
-    over = true;
-    const correct = id === ex.answer;
-    choices.reveal(id);
-    fb.mark(ex.note.s, ex.note.f, correct ? 'good' : 'show', ex.note.name);
-    ctx.done({ correct, auto: true, answer: answerLine(ex.note), notes: [{ key: ex.note.key, correct }] });
-  });
-  return {
-    el: h('div', { class: 'ex ex-fret-name' }, prompt('What is this note called?'), h('div', { class: 'fb-wrap' }, fb.el), choices.el),
-    start() { audio.pluck(ex.note.sounding, { gain: 0.6 }); },
-    key: choices.key,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Matching pairs
-// ---------------------------------------------------------------------------
-function pairsView(ex, ctx) {
-  const idOf = (n) => (ex.mode === 'name' ? n.nameId : n.key);
-  let right = ex.notes.slice().sort(() => Math.random() - 0.5);
-  if (right.every((n, i) => n === ex.notes[i])) right = [...right.slice(1), right[0]];
-  const wrong = new Set();
-  let picked = { l: null, r: null }, slips = 0, matched = 0, over = false;
-
-  const make = (side, n, content) => {
-    const b = h('button', { class: `pair pair-${side}`, type: 'button', dataset: { side, k: idOf(n) } }, content);
-    b.addEventListener('click', () => choose(side, b));
-    return b;
-  };
-  const left = ex.notes.map((n) => make('l', n, flashcard(n.pitch, { width: 150 }, ex, { sp: 8.5, minWidth: 96 }).el));
-  const rightEls = right.map((n) => make('r', n, ex.mode === 'name' ? noteLabel(n.nameId) : h('span', { class: 'pair-place' }, cap(shortPos(n)))));
-
-  function choose(side, b) {
-    if (over || b.disabled) return;
-    if (picked[side]) picked[side].classList.remove('is-picked');
-    picked[side] = b;
-    b.classList.add('is-picked');
-    if (!picked.l || !picked.r) return;
-    const [a, c] = [picked.l, picked.r];
-    picked = { l: null, r: null };
-    a.classList.remove('is-picked');
-    c.classList.remove('is-picked');
-    if (a.dataset.k === c.dataset.k) {
-      for (const el of [a, c]) { el.disabled = true; el.classList.add('is-good'); }
-      audio.sfx('match');
-      if (++matched === ex.notes.length) finish();
-    } else {
-      slips++;
-      wrong.add(a.dataset.k);
-      wrong.add(c.dataset.k);
-      for (const el of [a, c]) { el.classList.add('is-bad'); setTimeout(() => el.classList.remove('is-bad'), 450); }
-    }
-  }
-  function finish() {
-    over = true;
-    ctx.done({
-      correct: slips < 2, auto: slips === 0, slips,
-      tip: slips >= 2 ? `${plural(slips, 'mismatch', 'mismatches')} — look closely at lines and spaces.` : null,
-      notes: ex.notes.map((n) => ({ key: n.key, correct: !wrong.has(idOf(n)) })),
-    });
-  }
-  return {
-    el: h('div', { class: 'ex ex-pairs' }, prompt(ex.mode === 'name' ? 'Match each note to its name' : 'Match each note to its place on the neck'),
-      h('div', { class: 'pairs' }, h('div', { class: 'pair-col' }, left), h('div', { class: 'pair-col' }, rightEls))),
   };
 }
 
@@ -431,29 +364,6 @@ function phraseView(ex, ctx) {
       fb ? h('div', { class: 'fb-wrap' }, fb.el) : panel.el),
     start() { paint(0, 'active'); },
     stop() { if (off) off(); if (panel) panel.stop(); if (playback) playback.stop(); },
-  };
-}
-
-function hearPhraseView(ex, ctx) {
-  let over = false, playback = null;
-  const play = () => { if (playback) playback.stop(); playback = playMelody(parseMelody(ex.options[ex.answer]), ex.bpm, null); };
-  const buttons = ex.options.map((melody, i) => {
-    const staff = renderStaff({ measures: parseMelody(melody), width: Math.min(ctx.width - 28, 300), sp: 9, endBar: 'none', stretch: false, keySig: ex.keySig ?? 0, range: ex.range ?? null, explicit: ex.explicit });
-    return h('button', { class: 'option option-wide', type: 'button', dataset: { i }, 'aria-label': `Option ${i + 1}`, onclick: () => pick(i) }, staff.el);
-  });
-  function pick(i) {
-    if (over) return;
-    over = true;
-    const correct = i === ex.answer;
-    buttons.forEach((b, k) => { b.disabled = true; if (k === ex.answer) b.classList.add('is-good'); else if (k === i) b.classList.add('is-bad'); });
-    ctx.done({ correct, auto: true, tip: 'The tune you heard is the one outlined in green.', notes: [] });
-  }
-  return {
-    el: h('div', { class: 'ex ex-hear' }, prompt('Listen. Which one do you hear?'),
-      button('Play', { kind: 'soft', icon: 'speaker-high', cls: 'listen-btn', onclick: play }), h('div', { class: 'options' }, buttons)),
-    start() { setTimeout(() => { if (!over) play(); }, 350); },
-    stop() { if (playback) playback.stop(); },
-    key: (ev) => { const i = Number(ev.key) - 1; if (!(i >= 0 && i < 3)) return false; pick(i); return true; },
   };
 }
 
@@ -688,72 +598,8 @@ function rhythmMicView(ex, ctx) {
   };
 }
 
-function rhythmHearView(ex, ctx) {
-  let over = false, playback = null;
-  const play = () => {
-    if (playback) playback.stop();
-    playback = playMelody(parseMelody(ex.options[ex.answer]), ex.bpm, null, { clicks: true, timeSig: ex.timeSig, countIn: true });
-  };
-  const buttons = ex.options.map((melody, i) => {
-    const staff = renderStaff({ measures: parseMelody(melody), timeSig: ex.timeSig, width: Math.min(ctx.width - 28, 330), sp: 8.5, stretch: false });
-    return h('button', { class: 'option option-wide', type: 'button', dataset: { i }, 'aria-label': `Option ${i + 1}`, onclick: () => pick(i) }, staff.el);
-  });
-  function pick(i) {
-    if (over) return;
-    over = true;
-    const correct = i === ex.answer;
-    buttons.forEach((b, k) => { b.disabled = true; if (k === ex.answer) b.classList.add('is-good'); else if (k === i) b.classList.add('is-bad'); });
-    ctx.done({ correct, auto: true, tip: 'The rhythm you heard is the one outlined in green.', notes: [] });
-  }
-  return {
-    el: h('div', { class: 'ex ex-hear' }, prompt('Listen to the count-in, then the rhythm. Which one is it?'),
-      button('Play', { kind: 'soft', icon: 'speaker-high', cls: 'listen-btn', onclick: play }), h('div', { class: 'options' }, buttons)),
-    start() { setTimeout(() => { if (!over) play(); }, 350); },
-    stop() { if (playback) playback.stop(); },
-    key: (ev) => { const i = Number(ev.key) - 1; if (!(i >= 0 && i < 3)) return false; pick(i); return true; },
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Multiple choice
-// ---------------------------------------------------------------------------
-function mcqView(ex, ctx) {
-  let over = false;
-  const visual = [];
-  if (ex.visual?.symbol) visual.push(h('div', { class: 'card symbol-big' }, symbolSvg(ex.visual.symbol, { sp: 15 })));
-  if (ex.visual?.symbols) visual.push(h('div', { class: 'card symbol-big' }, ex.visual.symbols.map((sym) => symbolSvg(sym, { sp: 13 }))));
-  if (ex.visual?.staff) {
-    const st = ex.visual.staff;
-    const staff = renderStaff({
-      measures: parseMelody(st.melody), timeSig: st.timeSig ?? null, keySig: st.keySig ?? 0, width: ctx.staffWidth, sp: 11, stretch: false,
-      endBar: st.endBar ?? (st.timeSig ? 'final' : 'none'), minWidth: st.minWidth ?? 0, range: st.range ?? null,
-    });
-    if (st.mark != null) staff.setState(st.mark, 'active');
-    visual.push(h('div', { class: 'card staff-card' }, staff.el));
-  }
-  const describe = (c) => (c.label ? c.label : c.symbol ? cap(SYMBOLS[c.symbol][1]) : noteLabel(c.note));
-  const buttons = ex.choices.map((c, i) => h('button', {
-    class: ['choice', c.symbol ? 'choice-symbol' : c.note ? 'choice-note' : 'choice-text'], type: 'button', dataset: { i },
-    'aria-label': c.symbol ? cap(SYMBOLS[c.symbol][1]) : null, onclick: () => pick(i),
-  }, c.label ? c.label : c.symbol ? symbolSvg(c.symbol, { sp: 10 }) : noteLabel(c.note)));
-  function pick(i) {
-    if (over) return;
-    over = true;
-    const correct = i === ex.answer;
-    buttons.forEach((b, k) => { b.disabled = true; if (k === ex.answer) b.classList.add('is-good'); else if (k === i) b.classList.add('is-bad'); });
-    ctx.done({ correct, auto: true, answer: describe(ex.choices[ex.answer]), notes: [] });
-  }
-  const compact = ex.choices.every((c) => !c.label || c.label.length <= 9);
-  return {
-    el: h('div', { class: 'ex ex-mcq' }, prompt(ex.prompt), visual, h('div', { class: ['choices', compact ? 'choices-row' : 'choices-col'] }, buttons)),
-    key: (ev) => { const i = Number(ev.key) - 1; if (!(i >= 0 && i < buttons.length)) return false; pick(i); return true; },
-  };
-}
-
-const VIEWS = {
-  intro: introView, name: nameView, find: findView, pickStaff: pickStaffView, fretToStaff: fretToStaffView, fretToName: fretToNameView,
-  pairs: pairsView, phrase: phraseView, hearPhrase: hearPhraseView, rhythmTap: rhythmTapView, rhythmHear: rhythmHearView, mcq: mcqView,
-};
+// "name" is only used by the Practice sprint; lessons ask for playing: find, phrase, rhythmTap
+const VIEWS = { intro: introView, name: nameView, find: findView, phrase: phraseView, rhythmTap: rhythmTapView };
 
 export function createExercise(ex, ctx) {
   const make = VIEWS[ex.type];
