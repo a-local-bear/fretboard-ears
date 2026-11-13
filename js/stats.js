@@ -1,7 +1,7 @@
 // Practice statistics. Pure functions: no DOM, no storage, "now" is always passed in.
 // Log entries: { t, heard, answered, tries, ms?, hs?, as? }. Notes are counted as semitones above the
-// tonic (0 = Do … 11 = Si, 12 = Do'), so they mean the same thing in every key and mode. `hs`/`as` hold
-// that offset; older entries only have `heard`/`answered` as C-major degree indexes (0 = Do … 7 = Do').
+// tonic (0 = the root … 11 = the seventh, 12 = the octave), so they mean the same thing in every key and mode. `hs`/`as` hold
+// that offset; older entries only have `heard`/`answered` as C-major degree indexes (0 = the root … 7 = the octave).
 
 export const SESSION_GAP_MS = 5 * 60 * 1000; // a longer pause starts a new session
 export const SESSION_LEAD_MS = 15 * 1000; // time credited for the first answer of a session
@@ -30,7 +30,7 @@ const dayBefore = (t, n) => dayKey(addDays(t, -n));
 const isNum = (x) => typeof x === 'number' && Number.isFinite(x);
 const isOffset = (x) => Number.isInteger(x) && x >= 0 && x < 64;
 const MAJOR_OFFSETS = [0, 2, 4, 5, 7, 9, 11, 12];
-/** Fold higher octaves onto Do…Do' so Mi'' counts as Mi and Do'' as Do'. */
+/** Fold higher octaves onto the first (0 … 12), so a third two octaves up counts as the third and any higher root as the octave. */
 const fold = (o) => (o <= 12 ? o : o % 12 || 12);
 /** The heard and answered notes of an entry as folded offsets, or null if it can't be read. */
 export function notesOf(e) {

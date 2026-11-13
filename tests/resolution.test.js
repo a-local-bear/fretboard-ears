@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolutionOf, SCALES, MIN_MIDI, MAX_MIDI } from '../js/data.js';
 
-test('major: stepwise to the nearest Do', () => {
+test('major: stepwise to the nearest root', () => {
   assert.deepEqual(resolutionOf(0), [0]);
   assert.deepEqual(resolutionOf(12), [12]);
   assert.deepEqual(resolutionOf(2), [2, 0]);
@@ -34,7 +34,7 @@ test('octave-correct', () => {
   assert.deepEqual(resolutionOf(-8), [-8, -10, -12]);
 });
 
-test('every path ends on Do and moves by at most a minor third', () => {
+test('every path ends on the root and moves by at most a minor third', () => {
   for (const mode of Object.keys(SCALES)) {
     for (let o = -24; o <= 36; o++) {
       const p = resolutionOf(o, mode);

@@ -1,89 +1,154 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  CHAPTERS, CHORDS, CADENCE, OPEN, MAX_FRET, MIN_MIDI, MAX_MIDI, SCALES,
-  levelsFor, buildContext, newestOf, placeChapter, cadenceFor, midiOf,
-  solfegeName, letterName, keyName, noteColor, degreeIndex, SEMI_NAMES, SEMI_COLORS,
+  POSITIONS, LEVELS, FAMILIES, CHORDS, CADENCE, OPEN, MAX_FRET, MIN_MIDI, MAX_MIDI, SCALES,
+  levelById, positionById, buildContext, newestOf, pickKey, placePosition, cadenceFor, midiOf,
+  degreeName, degreeWord, letterName, keyName, noteColor, degreeIndex, DEGREE_NAMES, SEMI_COLORS,
 } from '../js/data.js';
+import { mulberry32 } from '../js/deck.js';
 
 const KEYS = [...Array(12).keys()];
+const BOXES = POSITIONS.filter((p) => p.shape === 'box');
 const midiAt = ([s, f]) => OPEN[s] + f;
+const pool = (id, keyPc = 0, pos = 'A') => {
+  const l = levelById(id);
+  return buildContext(pos, l, keyPc, l.mode ?? 'major').pool;
+};
 
-test('level ids are unique and the original ones are kept', () => {
-  const all = CHAPTERS.flatMap((c) => levelsFor(c.id).map((l) => l.id));
-  assert.equal(new Set(all).size, all.length);
-  for (const c of CHAPTERS.slice(0, 4)) {
-    const ls = levelsFor(c.id);
-    const ids = ['t0', 't1', 't2', 3, 4, 5, 6];
-    ids.forEach((x, l) => assert.equal(ls[l].id, `${c.id}-${x}`));
-    assert.equal(ls[0].idx, 0);
-  }
+test('one ladder: unique ids, in stage order, indexed', () => {
+  const ids = LEVELS.map((l) => l.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.equal(LEVELS.length, 31);
+  LEVELS.forEach((l, i) => assert.equal(l.idx, i));
+  // The stages follow each other without mixing.
+  const order = Object.keys(FAMILIES);
+  assert.deepEqual([...new Set(LEVELS.map((l) => l.family))], order);
+  assert.deepEqual(order, ['major', 'majorChrom', 'minor', 'minorChrom', 'all']);
+  for (const l of LEVELS) assert.equal(l.title, `${FAMILIES[l.family].name} · ${l.name}`);
 });
 
-test('every pattern chapter has the same level families; the neck adds octave levels', () => {
-  assert.equal(levelsFor('pA').length, 35);
-  assert.equal(levelsFor('neck').length, 39);
-  for (const f of ['major', 'majorChrom', 'minor', 'minorChrom', 'random']) {
-    assert.ok(levelsFor('neck').some((l) => l.family === f), f);
-  }
-  assert.ok(levelsFor('neck').some((l) => l.name === 'Many octaves'));
-  assert.ok(!levelsFor('pA').some((l) => l.name === 'Many octaves'));
-});
-
-test('the build-up is triad first: Do·Sol, Do·Mi·Sol, Do·Re·Mi·Sol, then Fa, La, Si, Do\'', () => {
+test('the major build-up is triad first, in a fixed key: 1·5, 1·3·5, 1·2·3·5, then 4, 6, 7 and the octave', () => {
   const pools = [[0, 7], [0, 4, 7], [0, 2, 4, 7], [0, 2, 4, 5, 7], [0, 2, 4, 5, 7, 9], [0, 2, 4, 5, 7, 9, 11], [0, 2, 4, 5, 7, 9, 11, 12]];
   const newest = [7, 4, 2, 5, 9, 11, 12];
-  for (const c of CHAPTERS.slice(0, 4)) {
-    const ls = levelsFor(c.id);
-    pools.forEach((pool, l) => {
+  const ids = ['major-t0', 'major-t1', 'major-t2', 'major-3', 'major-4', 'major-5', 'major-6'];
+  assert.deepEqual(LEVELS.slice(0, 7).map((l) => l.id), ids);
+  assert.deepEqual(LEVELS.slice(0, 7).map((l) => l.name), ['1 · 5', '1 · 3 · 5', '1 · 2 · 3 · 5', '1 – 5', '1 – 6', '1 – 7', 'Whole octave']);
+  ids.forEach((id, i) => {
+    const l = levelById(id);
+    assert.equal(l.random, null, `${id} stays in the chosen key`);
+    assert.equal(l.newest, newest[i]);
+    assert.equal(newestOf(l, pools[i]), newest[i]);
+    for (const p of POSITIONS) {
       for (const keyPc of KEYS) {
-        const ctx = buildContext(c.id, ls[l], keyPc, 'major');
-        assert.deepEqual(ctx.pool, pool, `${ls[l].id} in ${keyPc}`);
-        for (const o of pool) assert.ok(ctx.positions.get(o).length >= 1);
+        const ctx = buildContext(p.id, l, keyPc, 'major');
+        assert.deepEqual(ctx.pool, pools[i], `${id} at ${p.id} in ${keyPc}`);
+        for (const o of pools[i]) assert.ok(ctx.positions.get(o).length >= 1);
       }
-      assert.equal(ls[l].newest, newest[l]);
-      assert.equal(newestOf(ls[l], pool), newest[l]);
-      assert.equal(ls[l].grow, l);
-    });
+    }
+  });
+});
+
+test('after the fixed-key octave every level draws its key, and the last one its mode too', () => {
+  const rest = LEVELS.slice(7);
+  for (const l of rest) assert.ok(l.random, `${l.id} draws a key`);
+  assert.equal(levelById('major-rk').random, 'major');
+  assert.equal(levelById('minor-oct').random, 'minor');
+  assert.equal(levelById('all-neck').random, 'any');
+  const rng = mulberry32(5);
+  const drawn = Array.from({ length: 40 }, () => pickKey(levelById('all-neck'), 0, rng));
+  assert.ok(drawn.some((k) => k.mode === 'major') && drawn.some((k) => k.mode === 'minor'));
+  assert.ok(new Set(drawn.map((k) => k.keyPc)).size > 6);
+  assert.deepEqual(pickKey(levelById('major-3'), 7, rng), { keyPc: 7, mode: 'major' });
+  assert.equal(pickKey(levelById('minor-t'), 7, rng).mode, 'minor');
+});
+
+test('the four stages have the notes they promise', () => {
+  assert.deepEqual(pool('major-rk', 4), [0, 2, 4, 5, 7, 9, 11, 12]);
+  assert.deepEqual(pool('minor-t', 9), [0, 3, 7]);
+  assert.deepEqual(pool('minor-5', 9), [0, 2, 3, 5, 7]);
+  assert.deepEqual(pool('minor-6', 9), [0, 2, 3, 5, 7, 8]);
+  assert.deepEqual(pool('minor-oct', 9), [0, 2, 3, 5, 7, 8, 10, 12]);
+  assert.equal(newestOf(levelById('minor-oct'), pool('minor-oct')), 10, 'the flat seventh is the new note');
+  for (const f of ['majorChrom', 'minorChrom']) {
+    assert.deepEqual(pool(`${f}-1st`, 2), [0, 1, 2, 3, 4, 5, 6]);
+    assert.deepEqual(pool(`${f}-2nd`, 2), [6, 7, 8, 9, 10, 11, 12]);
+    assert.deepEqual(pool(`${f}-oct`, 2), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    assert.equal(pool(`${f}-2oct`, 2).length, 25);
   }
-  assert.deepEqual(levelsFor('one').slice(0, 7).map((l) => l.name), ['Do · Sol', 'Do · Mi · Sol', 'Do · Re · Mi · Sol', 'Do – Sol', 'Do – La', 'Do – Si', "Do – Do'"]);
+  assert.deepEqual(pool('major-2oct', 7), [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24]);
+  assert.equal(pool('minor-2oct', 7).at(-1), 24);
+});
+
+test('each stage ends with two-note and four-note dictation over the whole octave', () => {
+  for (const f of ['major', 'majorChrom', 'minor', 'minorChrom']) {
+    const ls = LEVELS.filter((l) => l.family === f);
+    assert.deepEqual(ls.slice(-2).map((l) => l.len), [2, 4], f);
+    assert.deepEqual(ls.slice(-2).map((l) => l.id), [`${f}-dict-2`, `${f}-dict-4`]);
+    for (const l of ls.slice(-2)) assert.deepEqual([l.from, l.to, l.neck], [0, 12, false]);
+    assert.ok(ls.slice(0, -2).every((l) => !(l.len > 1)));
+  }
+});
+
+test('more than one octave is always on the whole neck, whatever position is chosen', () => {
+  const wide = LEVELS.filter((l) => l.neck);
+  assert.deepEqual(wide.map((l) => l.id), ['major-2oct', 'majorChrom-2oct', 'minor-2oct', 'minorChrom-2oct', 'all-neck']);
+  for (const l of wide) {
+    for (const p of POSITIONS) {
+      const ctx = buildContext(p.id, l, 3, l.mode ?? 'minor');
+      assert.equal(ctx.positionId, 'neck');
+      assert.ok(ctx.multiOctave, l.id);
+    }
+  }
+  for (const l of LEVELS.filter((x) => !x.neck)) {
+    for (const p of POSITIONS) {
+      const ctx = buildContext(p.id, l, 3, l.mode);
+      assert.equal(ctx.positionId, p.id);
+      assert.ok(!ctx.multiOctave, l.id);
+    }
+  }
 });
 
 test('an explicit notes list is honoured, minor mode and gaps included', () => {
-  const ctx = buildContext('pA', { notes: [0, 3, 7], chromatic: false }, 9, 'minor');
+  const ctx = buildContext('A', { notes: [0, 3, 7], chromatic: false }, 9, 'minor');
   assert.deepEqual(ctx.pool, [0, 3, 7]);
   assert.ok([...ctx.positions.values()].every((p) => p.length === 1));
   assert.deepEqual(buildContext('neck', { notes: [0, 12, 99], chromatic: false }, 0, 'major').pool, [0, 12]);
 });
 
-test('C major reproduces the original chapter notes exactly', () => {
-  for (const c of CHAPTERS.slice(0, 4)) {
-    const ctx = buildContext(c.id, levelsFor(c.id)[6], 0, 'major');
+test('the three boxes are one fingering: E and A the same, D with its B string a fret up', () => {
+  const shape = (p) => p.notes.map(([s, f]) => [s - p.root[0], f - p.root[1]]);
+  const [e, a, d] = ['E', 'A', 'D'].map((id) => shape(positionById(id)));
+  assert.deepEqual(e, a);
+  assert.deepEqual(d.slice(0, 5), a.slice(0, 5));
+  assert.deepEqual(d.slice(5), a.slice(5).map(([s, f]) => [s, f + 1]));
+  for (const p of BOXES) assert.deepEqual(p.notes.map((n) => midiOf(n) - midiOf(p.root)), [0, 2, 4, 5, 7, 9, 11, 12]);
+});
+
+test('C major reproduces the reference notes of each box exactly', () => {
+  for (const p of BOXES) {
+    const ctx = buildContext(p.id, levelById('major-6'), 0, 'major');
     assert.deepEqual(ctx.pool, [0, 2, 4, 5, 7, 9, 11, 12]);
-    assert.deepEqual(ctx.pool.map((o) => ctx.positions.get(o)[0]), c.notes, c.id);
-    assert.equal(ctx.tonic, midiOf(c.notes[0]));
-    const [lo, hi] = [Math.min(...c.notes.map((n) => n[1])), Math.max(...c.notes.map((n) => n[1]))];
+    assert.deepEqual(ctx.pool.map((o) => ctx.positions.get(o)[0]), p.notes, p.id);
+    assert.equal(ctx.tonic, midiOf(p.notes[0]));
+    const [lo, hi] = [Math.min(...p.notes.map((n) => n[1])), Math.max(...p.notes.map((n) => n[1]))];
     assert.deepEqual(ctx.frame, { lo: Math.max(0, lo - 1), hi }, 'the frame hugs the notes');
   }
 });
 
 test('the drawn frame covers only the frets a level uses', () => {
-  const two = buildContext('one', levelsFor('one')[0], 0, 'major'); // Do and Sol on the B string: frets 1 and 8
-  assert.deepEqual(two.frame, { lo: 0, hi: 8 });
-  const close = buildContext('pA', { notes: [0, 2], chromatic: false }, 0, 'major'); // frets 3 and 5
+  const close = buildContext('A', { notes: [0, 2], chromatic: false }, 0, 'major'); // frets 3 and 5
   assert.ok(close.frame.hi - close.frame.lo >= 4, 'never narrower than four frets');
   assert.ok(close.frame.lo <= 2 && close.frame.hi >= 5);
   assert.ok(buildContext('neck', { notes: [0, 4, 7], chromatic: false }, 0, 'major').frame.hi <= 12);
 });
 
-test('patterns transpose to every key within the neck and the recorded samples', () => {
-  for (const c of CHAPTERS) {
+test('every level fits every position in every key, within the neck and the recorded samples', () => {
+  for (const p of POSITIONS) {
     for (const keyPc of KEYS) {
-      const place = placeChapter(c.id, keyPc);
-      assert.equal(place.tonic % 12, keyPc, `${c.id} tonic is the key`);
+      assert.equal(placePosition(p.id, keyPc).tonic % 12, keyPc, `${p.id} tonic is the key`);
       for (const mode of ['major', 'minor']) {
-        for (const level of levelsFor(c.id)) {
-          const ctx = buildContext(c.id, level, keyPc, level.mode ?? mode);
+        for (const level of LEVELS) {
+          const ctx = buildContext(p.id, level, keyPc, level.mode ?? mode);
           assert.ok(ctx.pool.length >= 2, `${level.id} in ${keyPc}`);
           for (const o of ctx.pool) {
             assert.ok(ctx.tonic + o >= MIN_MIDI && ctx.tonic + o <= MAX_MIDI, `${level.id} note ${o} in sample range`);
@@ -99,35 +164,26 @@ test('patterns transpose to every key within the neck and the recorded samples',
   }
 });
 
-test('a pattern chapter shows one octave of all 13 semitones in every key', () => {
-  for (const c of CHAPTERS.slice(0, 4)) {
+test('a box shows one octave of all 13 semitones in every key, one position each', () => {
+  for (const p of BOXES) {
     for (const keyPc of KEYS) {
-      const ctx = buildContext(c.id, { from: 0, to: 12, chromatic: true }, keyPc, 'major');
-      assert.deepEqual(ctx.pool, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], `${c.id} ${keyPc}`);
-      assert.ok(ctx.positions.values().every((p) => p.length === 1), 'one position per note in a pattern');
+      const ctx = buildContext(p.id, levelById('majorChrom-oct'), keyPc, 'major');
+      assert.deepEqual(ctx.pool, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], `${p.id} ${keyPc}`);
+      assert.ok(ctx.positions.values().every((x) => x.length === 1), 'one position per note in a box');
     }
   }
 });
 
-test('minor levels use the natural minor scale, chromatic levels all semitones', () => {
-  const minor = levelsFor('pA').find((l) => l.id === 'pA-minor-oct');
-  assert.deepEqual(buildContext('pA', minor, 9, 'minor').pool, [0, 2, 3, 5, 7, 8, 10, 12]);
-  const chrom = levelsFor('pA').find((l) => l.id === 'pA-minorChrom-1st');
-  assert.deepEqual(buildContext('pA', chrom, 9, 'minor').pool, [0, 1, 2, 3, 4, 5, 6]);
-  const second = levelsFor('pA').find((l) => l.id === 'pA-major-2nd');
-  assert.deepEqual(buildContext('pA', second, 0, 'major').pool, [7, 9, 11, 12]);
-});
-
 test('whole neck: every position of a pitch, several octaves', () => {
-  const ctx = buildContext('neck', { from: 0, to: 12, chromatic: false }, 0, 'major');
+  const ctx = buildContext('neck', levelById('major-6'), 0, 'major');
   assert.equal(ctx.tonic, 48);
   const e = ctx.positions.get(4); // E4 = 52
   assert.deepEqual(e.map(midiAt), e.map(() => 52));
   assert.ok(e.length >= 3);
-  const all = buildContext('neck', levelsFor('neck').find((l) => l.id === 'neck-major-all'), 0, 'major');
+  const all = buildContext('A', levelById('all-neck'), 0, 'major');
   assert.ok(all.multiOctave);
-  assert.equal(all.pool[all.pool.length - 1], 72 - 48 + 4); // top note is E5 (76)
-  assert.equal(buildContext('neck', levelsFor('neck').find((l) => l.id === 'neck-minor-2oct'), 7, 'minor').pool.at(-1), 24);
+  assert.equal(all.pool.at(-1), 72 - 48 + 4); // top note is E5 (76)
+  assert.equal(all.pool.length, 29, 'every semitone from the root to the top sample');
 });
 
 test('cadence in C major is the original C F G C', () => {
@@ -154,13 +210,20 @@ test('cadence voicings: right chords, in key, inside the samples', () => {
   }
 });
 
-test('names, colours and log indexes', () => {
-  assert.equal(SEMI_NAMES.length, 12);
-  assert.equal(new Set(SEMI_NAMES).size, 12);
+test('notes are named by their interval from the root', () => {
+  assert.equal(DEGREE_NAMES.length, 12);
+  assert.equal(new Set(DEGREE_NAMES).size, 12);
+  assert.deepEqual(SCALES.major.map(degreeName), ['1', '2', '3', '4', '5', '6', '7']);
+  assert.deepEqual(SCALES.minor.map(degreeName), ['1', '2', '♭3', '4', '5', '♭6', '♭7']);
+  assert.deepEqual([1, 6].map(degreeName), ['♭2', '♭5']);
+  assert.deepEqual([12, 15, 24].map(degreeName), ["1'", "♭3'", "1''"]);
+  assert.deepEqual(SCALES.major.map(degreeWord), ['root', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh']);
+  assert.deepEqual([3, 8, 10].map(degreeWord), ['flat third', 'flat sixth', 'flat seventh']);
+  assert.deepEqual([12, 24, 16].map(degreeWord), ['octave', 'octave', 'third']);
+});
+
+test('colours, letters and log indexes', () => {
   assert.equal(new Set(SEMI_COLORS).size, 12);
-  assert.deepEqual([0, 2, 4, 5, 7, 9, 11, 12].map(solfegeName), ['Do', 'Re', 'Mi', 'Fa', 'Sol', 'La', 'Si', "Do'"]);
-  assert.equal(solfegeName(3), 'Me');
-  assert.equal(solfegeName(13), "Ra'");
   assert.equal(noteColor(12), noteColor(0));
   assert.equal(noteColor(24), noteColor(0));
   assert.equal(letterName(4, 0, 'major'), 'E');
@@ -175,5 +238,4 @@ test('names, colours and log indexes', () => {
   assert.equal(degreeIndex(1, 'major'), 9);
   assert.equal(degreeIndex(16, 'major'), 24);
   assert.notEqual(degreeIndex(3, 'major'), degreeIndex(4, 'major'));
-  assert.ok(SCALES.minor.includes(3));
 });

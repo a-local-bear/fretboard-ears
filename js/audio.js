@@ -1,9 +1,8 @@
 // Web Audio playback. Everything is scheduled on the AudioContext clock.
 
 import { renderPluck, ksParams, midiToFreq } from './ks.js';
-import { CHORDS, CADENCE, CHAPTERS, midiOf } from './data.js';
+import { CHORDS, CADENCE, POSITIONS, midiOf } from './data.js';
 import { loadSample } from './samples.js';
-import { loopEvents, cycleSeconds, dueEvents } from './sequencer.js';
 
 let ctx = null;
 let out = null; // input of the shared chain: lowpass → master → compressor → destination
@@ -19,8 +18,6 @@ const CADENCE_TO_NOTE = 1.15;
 const DO_TO_NOTE = 0.9;
 const STRUM_STEP = 0.022;
 const CHORD_DAMP = 0.05; // seconds of fade on the old chord at a chord change
-const OVER_TO_NOTE = 0.55; // a chord struck this long before the mystery note sounds over it
-const OVER_GAIN = 0.24;
 const DRONE_LEAD = 1.4; // seconds the drone sounds alone before the mystery note
 const DRONE_GAIN = 0.075; // per oscillator; soft, a bed rather than a note
 const DRONE_FADE = 0.3;
@@ -43,7 +40,7 @@ export function ensureAudio() {
     out = lp;
     applyTone();
     // Start loading every note the app uses, so samples are ready before the first level.
-    const used = CHAPTERS.flatMap((c) => c.notes.map(midiOf)).concat(Object.values(CHORDS).flat());
+    const used = POSITIONS.flatMap((c) => c.notes.map(midiOf)).concat(Object.values(CHORDS).flat());
     if (sound === 'guitar') loadSamples(used);
   }
   if (ctx.state === 'suspended') ctx.resume();
@@ -205,9 +202,9 @@ function strum(notes, when, gain = 0.3) {
 }
 
 /**
- * Play the reference for `mode` ('cadence' | 'do' | 'drone' | 'none') starting now; `chords` are the cadence voicings (MIDI arrays).
+ * Play the reference for `mode` ('cadence' | 'do' (the root alone) | 'drone' | 'none') starting now;
+ * `chords` are the cadence voicings (MIDI arrays).
  * Returns the context time at which the mystery note should start.
- * `opts.over`: a chord (MIDI array) struck after the reference; the note then sounds over it.
  * `opts.droneFor`: seconds after which a drone fades by itself (the "Hear key" button); otherwise it holds.
  * Reference voices fade as the mystery note begins so it stands alone.
  */
@@ -226,14 +223,6 @@ export function playReference(mode, doMidi, chords = CADENCE.map((n) => CHORDS[n
     });
     refVoices = prev;
     noteAt = t0 + (chords.length - 1) * CHORD_GAP + CADENCE_TO_NOTE;
-    if (opts.over) {
-      // One more chord after the cadence; the note then sounds over it.
-      const at = t0 + chords.length * CHORD_GAP;
-      for (const v of prev) if (v) fadeVoice(v, at - CHORD_DAMP, CHORD_DAMP + 0.03);
-      refVoices = [];
-      strum(opts.over, at, OVER_GAIN);
-      noteAt = at + OVER_TO_NOTE;
-    }
   } else if (mode === 'do') {
     refVoices.push(playNote(doMidi, t0));
     noteAt = t0 + DO_TO_NOTE;
@@ -242,98 +231,8 @@ export function playReference(mode, doMidi, chords = CADENCE.map((n) => CHORDS[n
     startDrone(doMidi, t0, opts.droneFor != null ? t0 + opts.droneFor : null);
     noteAt = t0 + DRONE_LEAD;
   }
-  if (opts.over && mode !== 'cadence') {
-    // No cadence this round (e.g. once per level): the chord alone, then the note over it.
-    strum(opts.over, t0, OVER_GAIN);
-    noteAt = t0 + OVER_TO_NOTE;
-  }
   for (const v of refVoices) if (v) fadeVoice(v, noteAt - 0.05, 0.25);
   return noteAt;
-}
-
-// ---------- looping backing track ----------
-
-const LOOP_TICK_MS = 40; // how often the scheduler wakes up (only to look ahead; it does not time the notes)
-const LOOP_AHEAD = 0.25; // seconds of strums scheduled on the audio clock ahead of now
-const LOOP_LEAD = 0.1; // seconds before the first strum
-let loop = null;
-
-export const loopActive = () => !!loop;
-
-/**
- * Loop a chord progression until stopLoop(). `chords` are voicings (MIDI arrays), one per slot.
- * A lookahead scheduler: a timer wakes every LOOP_TICK_MS and schedules whatever strums fall in the
- * next LOOP_AHEAD seconds at exact AudioContext times, so timer jitter never reaches the music.
- * `onChord(index, time)` is called when a chord's first strum is scheduled (time: context clock).
- */
-export function startLoop({ chords, bpm, bars, onChord = null }) {
-  if (!ctx) return false;
-  stopLoop();
-  const events = loopEvents(chords.length, bpm, bars);
-  const lp = { events, cycle: cycleSeconds(chords.length, bpm, bars), start: ctx.currentTime + LOOP_LEAD, next: 0, prev: [], timer: null };
-  loop = lp;
-  const tick = () => {
-    if (loop !== lp) return;
-    const { due, next } = dueEvents(lp.events, lp.cycle, lp.start, lp.next, ctx.currentTime, LOOP_AHEAD);
-    lp.next = next;
-    for (const e of due) {
-      const up = e.dir === 'up'; // an up-strum touches only the top strings, and lets the chord ring
-      const notes = up ? chords[e.chord].slice(-3).reverse() : chords[e.chord];
-      if (!up) for (const v of lp.prev) if (v) fadeVoice(v, e.time - CHORD_DAMP, CHORD_DAMP + 0.03);
-      const played = strum(notes, e.time, e.gain);
-      lp.prev = up ? lp.prev.concat(played) : played;
-      if (e.change && onChord) onChord(e.chord, e.time);
-    }
-  };
-  tick();
-  lp.timer = setInterval(tick, LOOP_TICK_MS);
-  return true;
-}
-
-/** Stop the loop and fade out what it scheduled (also anything else playing). */
-export function stopLoop() {
-  if (!loop) return;
-  clearInterval(loop.timer);
-  loop = null;
-  stopAll(0.12);
-}
-
-/** Strum one chord (MIDI array, low → high) at context time `when`. */
-export function strumChord(notes, when = now() + 0.03, gain = 0.3) {
-  return ctx ? strum(notes, when, gain) : [];
-}
-
-/**
- * Strum a sequence of chords, `list` = [{ notes (MIDI array), at (context time), gain? }] in time
- * order; each strum damps the one before, like a guitarist's hand.
- */
-export function playChords(list, gain = 0.26) {
-  if (!ctx) return;
-  let prev = [];
-  for (const c of list) {
-    for (const v of prev) if (v) fadeVoice(v, c.at - CHORD_DAMP, CHORD_DAMP + 0.03);
-    prev = strum(c.notes, c.at, c.gain ?? gain);
-  }
-}
-
-/**
- * Play a melody, `list` = [{ midi, at (context time), dur (seconds) }]: each note is damped when
- * its written length is over (with a short release), so fast tunes don't blur into a cluster.
- */
-export function playMelody(list, gain = 0.9) {
-  if (!ctx) return;
-  for (const n of list) {
-    const v = playNote(n.midi, n.at, gain);
-    if (v) fadeVoice(v, Math.max(n.at + n.dur * 0.95, ctx.currentTime), 0.12);
-  }
-}
-
-/** Strum `chord` and sound `midi` over it (the replay of a round with a chord). Returns the note's time. */
-export function playOver(chord, midi) {
-  const t = now() + 0.03;
-  strum(chord, t, OVER_GAIN);
-  playNote(midi, t + OVER_TO_NOTE);
-  return t + OVER_TO_NOTE;
 }
 
 /**
@@ -357,7 +256,7 @@ export function callAt(when, fn) {
   return () => { live = false; };
 }
 
-/** Do-Mi-Sol-Do arpeggio for a pass. */
+/** The key's triad up to the octave, for a pass. */
 export function playArpeggio(midis) {
   const t = now() + 0.05;
   midis.forEach((m, i) => playNote(m, t + i * 0.16, 0.7));

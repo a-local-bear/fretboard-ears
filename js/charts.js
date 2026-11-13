@@ -2,7 +2,7 @@
 // <p>), sized by viewBox so it scales to its container. Colour only in strokes and text; hairline axes.
 
 import { weeklySeries } from './stats.js';
-import { noteColor, solfegeName } from './data.js';
+import { noteColor, degreeName, degreeWord } from './data.js';
 
 const W = 320;
 const ACCENT = '#c8ff2e';
@@ -132,8 +132,8 @@ export function noteSparklines(series) {
       pts.push({ i, x: x0 + px0 + (n <= 1 ? pw / 2 : (pw * i) / (n - 1)), y: yOf(v), thin: false });
     });
     const pct = latest == null ? '–' : `${Math.round(latest * 100)}%`;
-    summary.push(`${solfegeName(note)} ${pct}`);
-    body += `<text x="${x0}" y="${y0 + 16}" style="font:700 12px ui-monospace,Menlo,monospace;fill:${color}">${esc(solfegeName(note))}</text>`
+    summary.push(`${degreeWord(note)} ${pct}`);
+    body += `<text x="${x0}" y="${y0 + 16}" style="font:700 12px ui-monospace,Menlo,monospace;fill:${color}">${esc(degreeName(note))}</text>`
       + `<text x="${x0}" y="${y0 + 30}" style="${TXT}">${pct}</text>`
       + `<path d="M${x0 + px0} ${y0 + 6}V${y0 + 34}H${x0 + cw - 4}" style="${AXIS}"/>`
       + line(pts, color, 1.5);

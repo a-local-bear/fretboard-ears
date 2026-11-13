@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { detectPitch, freqToMidi, matchDegree, NoteTracker } from '../js/pitch.js';
 import { renderPluck, midiToFreq } from '../js/ks.js';
 import { mulberry32 } from '../js/deck.js';
-import { CHAPTERS, midiOf } from '../js/data.js';
+import { POSITIONS, midiOf } from '../js/data.js';
 
 const SR = 48000;
 const N = 2048;
@@ -37,7 +37,7 @@ test('harmonic-rich sawtooth: no octave errors', () => {
 });
 
 test('plucked strings (Karplus–Strong) for every note the app uses', () => {
-  const used = [...new Set(CHAPTERS.flatMap((c) => c.notes.map(midiOf)))];
+  const used = [...new Set(POSITIONS.flatMap((c) => c.notes.map(midiOf)))];
   for (const m of used) {
     const f = midiToFreq(m);
     const y = renderPluck(f, SR, { rng: mulberry32(m) });
@@ -59,16 +59,16 @@ test('silence gives null; noise has low clarity', () => {
   assert.ok(r === null || r.clarity < 0.9, `noise clarity ${r?.clarity}`);
 });
 
-test('matchDegree: any octave, outside notes have no degree, Do vs Do\' by nearness', () => {
-  const pattern = [48, 50, 52, 53, 55, 57, 59, 60]; // Pattern I, C3–C4
-  const level3 = [48, 50, 52]; // Do Re Mi
+test('matchDegree: any octave, outside notes have no degree, the root or its octave by nearness', () => {
+  const pattern = [48, 50, 52, 53, 55, 57, 59, 60]; // the box on the A string, C3–C4
+  const level3 = [48, 50, 52]; // root, second, third
   assert.deepEqual(matchDegree(52.1, level3), { nearest: 52, cents: 10, degree: 2 });
-  assert.equal(matchDegree(64, level3).degree, 2, 'E an octave up is still Mi');
-  assert.equal(matchDegree(55, level3).degree, null, 'Sol is not in level 3');
-  assert.equal(matchDegree(48, pattern).degree, 0, 'C3 → Do');
-  assert.equal(matchDegree(60, pattern).degree, 7, "C4 → Do'");
-  assert.equal(matchDegree(72, pattern).degree, 7, "C5 → Do' (nearer)");
-  assert.equal(matchDegree(36, pattern).degree, 0, 'C2 → Do (nearer)');
+  assert.equal(matchDegree(64, level3).degree, 2, 'E an octave up is still the third');
+  assert.equal(matchDegree(55, level3).degree, null, 'the fifth is not in this level');
+  assert.equal(matchDegree(48, pattern).degree, 0, 'C3 → the root');
+  assert.equal(matchDegree(60, pattern).degree, 7, 'C4 → the octave');
+  assert.equal(matchDegree(72, pattern).degree, 7, 'C5 → the octave (nearer)');
+  assert.equal(matchDegree(36, pattern).degree, 0, 'C2 → the root (nearer)');
   const sparse = [];
   sparse[0] = 48; sparse[1] = 50;
   assert.equal(matchDegree(50, sparse).degree, 1);

@@ -1,14 +1,14 @@
 // localStorage wrappers. Every access is guarded: storage can be missing or throw.
 
 import { normalizeProgress } from './progress.js';
-import { OVER_OPTIONS, normalizeBacking } from './harmony.js';
 import { addEntry, buildStats, validStats } from './stats.js';
 import { GAP_OPTIONS } from './listen.js';
-import { normalizeGuides } from './path.js';
+import { DEFAULT_POSITION, positionById } from './data.js';
 
-const KEYS = { settings: 'fe-settings', progress: 'fe-progress', log: 'fe-log', stats: 'fe-stats', key: 'fe-key', backing: 'fe-backing', path: 'fe-path' };
+const KEYS = { settings: 'fe-settings', progress: 'fe-progress', log: 'fe-log', stats: 'fe-stats', key: 'fe-key', position: 'fe-position' };
 const LOG_MAX = 5000;
-const DEFAULT_SETTINGS = { labels: 'solfege', ref: 'cadence', refWhen: 'each', resolve: 'on', over: 'off', sound: 'guitar', mic: false, adaptive: 'off', listenGap: '5', listenSpeak: 'on' };
+// labels: a saved 'solfege' (the names before numbers) reads as 'numbers'. ref 'do' is the root alone.
+const DEFAULT_SETTINGS = { labels: 'numbers', ref: 'cadence', refWhen: 'each', resolve: 'on', sound: 'guitar', mic: false, adaptive: 'off', listenGap: '5', listenSpeak: 'on' };
 
 function read(key) {
   try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
@@ -20,11 +20,10 @@ function write(key, value) {
 export function loadSettings() {
   const s = read(KEYS.settings) || {};
   return {
-    labels: ['solfege', 'letters', 'hidden'].includes(s.labels) ? s.labels : DEFAULT_SETTINGS.labels,
+    labels: ['numbers', 'letters', 'hidden'].includes(s.labels) ? s.labels : DEFAULT_SETTINGS.labels,
     ref: ['cadence', 'do', 'drone', 'none'].includes(s.ref) ? s.ref : DEFAULT_SETTINGS.ref,
     refWhen: ['each', 'level'].includes(s.refWhen) ? s.refWhen : DEFAULT_SETTINGS.refWhen,
     resolve: ['on', 'off'].includes(s.resolve) ? s.resolve : DEFAULT_SETTINGS.resolve,
-    over: OVER_OPTIONS.includes(s.over) ? s.over : DEFAULT_SETTINGS.over,
     sound: ['guitar', 'synth'].includes(s.sound) ? s.sound : DEFAULT_SETTINGS.sound,
     mic: s.mic === true,
     adaptive: ['on', 'off'].includes(s.adaptive) ? s.adaptive : DEFAULT_SETTINGS.adaptive,
@@ -44,13 +43,12 @@ export function loadKey() {
 }
 export const saveKey = (k) => write(KEYS.key, k);
 
-/** The last backing track: { key, mode, slots (roman numerals), tempo, bars }, always valid. */
-export const loadBacking = () => normalizeBacking(read(KEYS.backing));
-export const saveBacking = (b) => write(KEYS.backing, normalizeBacking(b));
-
-/** Ids of the path guides the player marked done. */
-export const loadGuides = () => normalizeGuides(read(KEYS.path)?.guides);
-export const saveGuides = (guides) => write(KEYS.path, { guides: normalizeGuides(guides) });
+/** The position (data.js POSITIONS id) the player practises in. */
+export function loadPosition() {
+  const id = read(KEYS.position);
+  return positionById(id) ? id : DEFAULT_POSITION;
+}
+export const savePosition = (id) => write(KEYS.position, id);
 
 export function loadLog() {
   const log = read(KEYS.log);

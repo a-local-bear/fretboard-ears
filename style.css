@@ -26,7 +26,7 @@
   --wire: #333333;
   --string: #8a8a8a;
   --dot-neutral: #d4d4d4;
-  /* One colour per scale degree: Do, Re, Mi, Fa, Sol, La, Si, Do' (same as Do). */
+  /* One colour per scale degree: 1 to 7, then the octave (same as the root). */
   --d0: #ff5f57; --d1: #ff9a3d; --d2: #ffd93a; --d3: #2ee6a6;
   --d4: #35c9ff; --d5: #7b8dff; --d6: #c47dff; --d7: #ff5f57;
   --display: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -55,14 +55,14 @@ button { font: inherit; color: inherit; }
 
 /* ---------- shared text helpers ---------- */
 /* Small uppercase monospace readout: metadata, captions, counters. */
-.label, .sub, .tsub, .count, .hearing, .cmeta, .lnum, .lbest, .newbest, .verdict, .keylabel, .keyline, .hero span, .fig span, .fig small, .hero small, .bn {
+.label, .sub, .tsub, .count, .hearing, .cmeta, .newbest, .verdict, .keylabel, .keyline, .hero span, .fig span, .fig small, .hero small, .bn {
   font-family: var(--mono);
   font-size: 11.5px;
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
-/* A scale degree name. Colour comes from --c, set by degreeName() in ui.js. */
+/* A note name. Colour comes from --c, set by coloredName() in ui.js. */
 .deg { color: var(--c, var(--ink)); font-weight: 700; }
 .hl { color: var(--accent); }
 .bignum { font: 700 56px/1 var(--display); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
@@ -95,7 +95,7 @@ button { font: inherit; color: inherit; }
 .actions .btn { flex: 0 1 180px; }
 
 /* ---------- home ---------- */
-.chapters, .levelgrid, .confusions { list-style: none; margin: 0; padding: 0; }
+.chapters, .confusions { list-style: none; margin: 0; padding: 0; }
 .chapters { display: grid; gap: 0; border-top: 1px solid var(--line); }
 .chapter { width: 100%; display: grid; grid-template-columns: 40px 1fr auto; gap: 14px; align-items: center; text-align: left; padding: 18px 4px; border: 0; border-bottom: 1px solid var(--line); background: transparent; cursor: pointer; }
 .chapter:hover .cname { color: var(--accent); }
@@ -107,28 +107,18 @@ a.chapter { text-decoration: none; color: inherit; box-sizing: border-box; }
 .cmeta { color: var(--muted); }
 
 /* ---------- levels ---------- */
-.levelgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-.levelcard { width: 100%; height: 100%; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; text-align: left; padding: 16px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); cursor: pointer; }
-.levelcard:hover { border-color: var(--ink); }
-.levelcard.passed { border-color: var(--line-2); }
-.lnum { color: var(--muted); }
-.lnotes { display: flex; gap: 5px; }
-.lnotes i { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--c); }
-.lnames { color: var(--muted); font-size: 13px; }
-.lbest { color: var(--muted); }
-.levelcard.passed .lbest { color: var(--ok); }
-.lnotes { flex-wrap: wrap; gap: 3px; }
-.lnotes i { width: 9px; height: 9px; }
-.levelgrid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
-.family { display: flex; flex-direction: column; gap: 10px; }
-.family .sub { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
-.fmode { color: var(--accent); }
+/* The notes of a level as small rings in their colours. */
+.lnotes { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 6px; }
+.lnotes i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--c); }
 .keybar { display: flex; flex-direction: column; gap: 8px; align-items: center; }
 .keylabel { color: var(--muted); }
 .keychips { display: grid; grid-template-columns: repeat(6, minmax(44px, 1fr)); gap: 6px; width: 100%; max-width: 420px; }
 .keychip { min-height: 44px; border-radius: 12px; border: 1px solid var(--line-2); background: transparent; font-weight: 700; cursor: pointer; }
 .keychip:hover { border-color: var(--ink); }
 .keychip.on { border-color: var(--accent); color: var(--accent); }
+/* The position picker: four choices in one row; the names may wrap on a narrow phone. */
+.poschips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; width: 100%; max-width: 420px; }
+.poschips .keychip { font-size: 14px; line-height: 1.15; padding: 4px 2px; }
 .keynote { margin: 0; color: var(--muted); font-size: 13px; text-align: center; text-wrap: balance; }
 .keyline { margin: 0; text-align: center; color: var(--accent); }
 
@@ -260,41 +250,7 @@ a.chapter { text-decoration: none; color: inherit; box-sizing: border-box; }
 .confusions.blocks li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: baseline; }
 .confusions.blocks .keyline { grid-column: 1 / -1; text-align: left; }
 .confusions.blocks b { color: var(--ink); font-variant-numeric: tabular-nums; }
-/* ---------- sing and find ---------- */
-.target { margin: 0; text-align: center; font: 700 56px/1.15 var(--display); letter-spacing: -0.03em; text-wrap: balance; }
-.target .tnote { opacity: 0.4; }
-.target .tnote.cur { opacity: 1; }
-.target .tnote.past { opacity: 0.7; }
-.target .tsep { color: var(--muted); font-size: 0.5em; font-weight: 400; }
-.voicelive { margin: 0; min-height: 1.6em; text-align: center; font: 700 22px/1.6 var(--display); color: var(--muted); }
-.voicelive .cue { font-weight: 500; color: var(--muted); }
-.voicelive .cue.good { color: var(--ok); }
-.voicelive .holddots { color: var(--ok); letter-spacing: 0.15em; }
-.micstate { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; color: var(--muted); font: 500 11.5px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; }
-.micstate.on { color: var(--accent); }
-@media (max-width: 639px) { .target { font-size: 44px; } }
-/* ---------- backing track ---------- */
-.backing .keybar { gap: 12px; }
-.btsec { display: flex; flex-direction: column; gap: 10px; align-items: center; }
-.btsec .sub { margin: 0; align-self: flex-start; }
-.snum { font-family: var(--mono); font-size: 12px; font-weight: 500; letter-spacing: 0.04em; color: var(--muted); }
-.slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 8px; width: 100%; max-width: 420px; }
-.slot { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 64px; justify-content: center; border-radius: 12px; border: 1px solid var(--line-2); background: transparent; font-size: 20px; cursor: pointer; }
-.slot:hover { border-color: var(--ink); }
-.slot.sel { border-color: var(--accent); }
-.slot.now { border-color: var(--ink); border-width: 2px; }
-.slot.now .snum { color: var(--accent); }
-.slotctl, .presets { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-.chordpal { display: grid; grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)); gap: 6px; width: 100%; max-width: 420px; }
-.chordpick { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 52px; justify-content: center; border-radius: 12px; border: 1px solid var(--line-2); background: transparent; cursor: pointer; }
-.chordpick:hover { border-color: var(--ink); }
-.chordpick.on { border-color: var(--accent); }
-.preset { min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-2); background: transparent; font-weight: 700; color: var(--muted); cursor: pointer; }
-.preset:hover { border-color: var(--ink); color: var(--ink); }
-.tempo { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; max-width: 420px; }
-.tempo input { width: 100%; accent-color: var(--accent); min-height: 32px; }
-.btnow { margin: 0; text-align: center; min-height: 1.3em; font: 700 28px/1.3 var(--display); letter-spacing: -0.02em; color: var(--muted); }
-.btnow .snum { font-size: 16px; }
+/* ---------- dot states of Songcraft's neck ---------- */
 /* Chord tones: thicker coloured stroke and a faint ring; the rest of the scale steps back. */
 .dot.chord .disc { stroke-width: 3.5; }
 .dot.chord .ring { stroke: var(--c); stroke-width: 1; opacity: 0.45; }
@@ -305,7 +261,7 @@ a.chapter { text-decoration: none; color: inherit; box-sizing: border-box; }
 .listen .lsopts { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 8px; text-align: center; }
 .listen .lsopts .hint { max-width: 46ch; }
 
-/* ---------- progression path ---------- */
+/* ---------- the path: next up, and a stage's levels as a checklist ---------- */
 .nextup { width: 100%; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; text-align: left; padding: 18px; border-radius: var(--radius); border: 1px solid var(--accent); background: var(--surface); cursor: pointer; }
 .nextup:hover { background: var(--surface-2); }
 .nextup .keyline { text-align: left; }
@@ -315,67 +271,20 @@ a.chapter { text-decoration: none; color: inherit; box-sizing: border-box; }
 .step .sname { font-size: 16px; }
 .step:hover .sname { color: var(--accent); }
 .smark { font: 500 14px/1 var(--mono); color: var(--muted); text-align: center; }
-.step.guide .smark { color: var(--d4); }
 .step.done .smark, .step.done .cmeta { color: var(--ok); }
 .step.done .sname { color: var(--muted); }
 .step.now { background: var(--surface); }
 .step.now .smark, .step.now .cmeta { color: var(--accent); }
-.guide .slot { cursor: default; }
-.guide .slot:hover { border-color: var(--line-2); }
-.tries { display: flex; flex-direction: column; gap: 10px; }
-.tries .sub { margin: 0; }
-.tries ol { margin: 0; padding-left: 22px; display: grid; gap: 12px; }
-.tries li::marker { color: var(--accent); font-family: var(--mono); }
 .pathhint { text-align: center; }
 .pathhint b { color: var(--ink); }
 
 /* ---------- longer explanations ---------- */
-.prose { display: flex; flex-direction: column; gap: 12px; max-width: 64ch; margin: 0 auto; }
-.prose p { margin: 0; color: #c8c8c8; line-height: 1.6; }
 .stagedesc { line-height: 1.55; }
 .stagedesc b { color: var(--ink); }
 .stip { color: var(--muted); font-size: 13.5px; line-height: 1.45; margin-top: 4px; }
 .step.done .stip { display: none; }
 .pathtip { text-align: center; max-width: 60ch; margin: 0 auto; text-wrap: balance; }
 .pathtip b { color: var(--accent); font-weight: 600; }
-.examples { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-
-/* ---------- ear drills ---------- */
-.dname { font-weight: 700; font-size: 15px; line-height: 1.3; }
-.choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 8px; width: 100%; max-width: 560px; margin: 0 auto; }
-.choices.named { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
-.choices.tonic { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-.choice { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 60px; padding: 8px 6px; border-radius: 12px; border: 1px solid var(--line-2); background: transparent; font-size: 19px; font-weight: 700; cursor: pointer; }
-.choices.tonic .choice { font-size: 15px; min-height: 52px; }
-.choices.named .choice { font-size: 16px; }
-.choice:hover:not(:disabled) { border-color: var(--ink); }
-.choice:disabled { cursor: default; }
-.choice.picked { border-color: var(--accent); color: var(--accent); }
-.choice.correct { border-color: var(--ok); color: var(--ok); }
-.choice.wrong { border-color: var(--bad); color: var(--bad); opacity: 0.7; }
-.choice kbd { position: absolute; top: 4px; right: 7px; font: 500 10px/1 var(--mono); color: var(--line-2); }
-@media (hover: none) { .choice kbd { display: none; } }
-.drslots { margin: 0 auto; }
-.drslots .slot { cursor: default; min-height: 58px; }
-.drslots .slot:hover { border-color: var(--line-2); }
-.drslots .slot.now { border-color: var(--accent); }
-.drill .prompt .muted { font-weight: 500; font-size: 0.75em; }
-
-/* ---------- songbook ---------- */
-.songbook .cnum { font-size: 11px; }
-.tune .keybar, .prog .keybar { gap: 10px; }
-.phrases { list-style: none; margin: 0; padding: 0; width: 100%; display: grid; gap: 0; border-top: 1px solid var(--line); }
-.phrases li { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--line); }
-.phrasebtn { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line-2); background: transparent; color: var(--accent); cursor: pointer; font-size: 13px; }
-.phrasebtn:hover { border-color: var(--ink); }
-.pnotes { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 18px; }
-.pdot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--line-2); }
-.tunebars { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; border-left: 1px solid var(--line-2); }
-.tunebars .bar { position: relative; display: flex; justify-content: space-around; gap: 4px; padding: 12px 4px 18px; border-right: 1px solid var(--line-2); border-bottom: 1px solid var(--line); }
-.bchord { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 17px; }
-.bnum { position: absolute; left: 5px; bottom: 3px; font: 500 9px/1 var(--mono); color: var(--line-2); }
-.slots.twelve { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.songlist { margin: 0; padding-left: 20px; align-self: flex-start; display: grid; gap: 6px; }
 
 /* ---------- phone-sized viewports ---------- */
 /* A screen with a fretboard (.fit) fills the viewport exactly and the board takes the space left
@@ -390,6 +299,7 @@ a.chapter { text-decoration: none; color: inherit; box-sizing: border-box; }
   .fit .lede { font-size: 14.5px; line-height: 1.4; }
   .fit .actions { gap: 8px; }
   .fit .actions .btn { min-height: 48px; }
+  .fit .poschips .keychip { min-height: 38px; }
 }
 @media (orientation: landscape) and (max-height: 720px) {
   .fit .boardwrap { min-height: 150px; }

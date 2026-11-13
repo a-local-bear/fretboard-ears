@@ -1,58 +1,21 @@
-// Phrases for the sequence levels (degree pairs and melodic dictation). Pure: pass a seeded rng
-// (deck.js mulberry32) for deterministic tests. A phrase is an array of note ids (semitone offsets
-// above the tonic) drawn from a level's pool.
+// Phrases for the dictation levels. Pure: pass a seeded rng (deck.js mulberry32) for deterministic
+// tests. A phrase is an array of note ids (semitone offsets above the tonic) drawn from a level's pool.
+
+import { SCALES } from './data.js';
 
 const mod12 = (n) => ((n % 12) + 12) % 12;
 
-/** Stable degrees of a mode as pitch classes: Do, Mi (Me in minor), Sol. */
+/** Stable degrees of a mode as pitch classes: the root, the third (flat in minor) and the fifth. */
 export const STABLE = { major: [0, 4, 7], minor: [0, 3, 7] };
 export const isStable = (offset, mode = 'major') => (STABLE[mode] || STABLE.major).includes(mod12(offset));
 
 const pick = (arr, rng) => arr[Math.floor(rng() * arr.length)];
 
-function shuffle(arr, rng) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
-
-/** Every ordered pair of two different notes of the pool. */
-export function allPairs(pool) {
-  const out = [];
-  for (const a of pool) for (const b of pool) if (a !== b) out.push([a, b]);
-  return out;
-}
-
 /**
- * `rounds` degree pairs covering the pool's pairs evenly: pairs are dealt from a shuffled bag of all
- * of them, and the bag is refilled only when empty, so no pair repeats before all have been used (and
- * none twice in a row across a refill).
- */
-export function buildPairDeck(pool, rounds = 10, rng = Math.random) {
-  const all = allPairs(pool);
-  if (!all.length) return Array.from({ length: rounds }, () => [pool[0], pool[0]]);
-  const same = (p, q) => p && q && p[0] === q[0] && p[1] === q[1];
-  const deck = [];
-  let bag = [];
-  while (deck.length < rounds) {
-    if (!bag.length) {
-      bag = shuffle(all.slice(), rng);
-      if (bag.length > 1 && same(bag[bag.length - 1], deck[deck.length - 1])) {
-        [bag[0], bag[bag.length - 1]] = [bag[bag.length - 1], bag[0]];
-      }
-    }
-    deck.push(bag.pop());
-  }
-  return deck;
-}
-
-/**
- * One melodic phrase of `len` notes from an ascending pool: starts on or near Do (the low part of
- * the pool, favouring Do, Mi, Sol), moves mostly by step with some skips and the occasional leap
- * (a leap tends to be followed by a step back), never repeats a note straight away, and ends on a
- * stable degree (Do, Mi, Sol) with probability `endStable`.
+ * One melodic phrase of `len` notes from an ascending pool: starts on or near the root (the low part
+ * of the pool, favouring root, third and fifth), moves mostly by step with some skips and the
+ * occasional leap (a leap tends to be followed by a step back), never repeats a note straight away,
+ * and ends on a stable degree (root, third, fifth) with probability `endStable`.
  */
 export function makePhrase(pool, len, { mode = 'major', rng = Math.random, endStable = 0.75 } = {}) {
   const n = pool.length;
@@ -89,22 +52,39 @@ export function makePhrase(pool, len, { mode = 'major', rng = Math.random, endSt
   return best || pool.slice(0, len);
 }
 
-/** `rounds` distinct phrases (as far as the pool allows), never the same one twice in a row. */
-export function buildPhraseDeck(pool, len, rounds = 10, { mode = 'major', rng = Math.random } = {}) {
+/**
+ * A phrase for a chromatic level: a phrase of the scale in which one note is swapped for a note from
+ * outside the scale a half step from its neighbour (the note after it, or for the last note the one
+ * before). A chromatic note is heard by where it leans, so it never stands alone.
+ */
+export function makeChromaticPhrase(pool, len, { mode = 'major', rng = Math.random } = {}) {
+  const scale = SCALES[mode] || SCALES.major;
+  const inScale = (o) => scale.includes(mod12(o));
+  const outside = new Set(pool.filter((o) => !inScale(o)));
+  const phrase = makePhrase(pool.filter(inScale), len, { mode, rng });
+  const spots = [];
+  for (let i = 0; i < len; i++) {
+    const neighbour = i < len - 1 ? phrase[i + 1] : phrase[i - 1];
+    for (const c of [neighbour - 1, neighbour + 1]) if (outside.has(c)) spots.push([i, c]);
+  }
+  if (!spots.length) return phrase;
+  const [i, c] = pick(spots, rng);
+  return phrase.map((n, k) => (k === i ? c : n));
+}
+
+/** A phrase of `level.len` notes for a level: from the scale, or with one chromatic note. */
+export const phraseFor = (level, pool, mode, rng = Math.random) =>
+  (level.chromatic ? makeChromaticPhrase : makePhrase)(pool, level.len, { mode, rng });
+
+/** The deck of a dictation level: `rounds` distinct phrases (as far as the pool allows). */
+export function buildPhraseDeck(level, pool, rounds = 10, { mode = 'major', rng = Math.random } = {}) {
   const deck = [];
   const seen = new Set();
   for (let r = 0; r < rounds; r++) {
-    let p = makePhrase(pool, len, { mode, rng });
-    for (let t = 0; t < 30 && seen.has(p.join()); t++) p = makePhrase(pool, len, { mode, rng });
+    let p = phraseFor(level, pool, mode, rng);
+    for (let t = 0; t < 30 && seen.has(p.join()); t++) p = phraseFor(level, pool, mode, rng);
     seen.add(p.join());
     deck.push(p);
   }
   return deck;
-}
-
-/** The deck for a level: 'pairs' deal pairs evenly, otherwise musical phrases of `level.len` notes. */
-export function buildSequenceDeck(level, pool, rounds, mode, rng = Math.random) {
-  return level.family === 'pairs'
-    ? buildPairDeck(pool, rounds, rng)
-    : buildPhraseDeck(pool, level.len, rounds, { mode, rng });
 }

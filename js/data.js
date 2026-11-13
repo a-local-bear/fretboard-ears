@@ -1,7 +1,7 @@
-// Static musical data: strings, chapters, note names and colours, and the level model.
+// Static musical data: strings, positions, note names and colours, and the level model.
 //
-// A note in a level is identified by its OFFSET: semitones above the key's tonic (0 = Do,
-// 12 = Do', 24 = Do'' …). Midi = tonic + offset, so the same ids work in every key and mode.
+// A note in a level is identified by its OFFSET: semitones above the key's root (0 = the root,
+// 12 = the octave, 24 = two octaves …). Midi = tonic + offset, so the same ids work in every key and mode.
 
 import { SAMPLE_RANGE } from './samples.js';
 
@@ -9,44 +9,37 @@ import { SAMPLE_RANGE } from './samples.js';
 export const OPEN = [40, 45, 50, 55, 59, 64];
 export const STRING_NAMES = ['E', 'A', 'D', 'G', 'B', 'e'];
 
-export const SOLFEGE = ['Do', 'Re', 'Mi', 'Fa', 'Sol', 'La', 'Si', "Do'"];
-export const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B', "C'"];
-/** Colour per scale degree (Do red … Si purple, Do' shares Do's red), bright enough for text on black. */
+/** Colour per scale degree (1 red … 7 purple, the octave shares the root's red), bright enough for text on black. */
 export const DEGREE_COLORS = ['#ff5f57', '#ff9a3d', '#ffd93a', '#2ee6a6', '#35c9ff', '#7b8dff', '#c47dff', '#ff5f57'];
 
 /**
- * Chapters. `notes` are the C major notes Do → Do' as [string, fret] (the reference placement);
- * `shape`, `strings`, `lo`/`hi` (fret window) and `root` describe the pattern so it can be slid to
- * any key (see placeChapter).
+ * Positions: where on the neck a level is answered. The player picks one; it changes the shape under
+ * the fingers, never what is heard. `notes` are the C major notes root → octave as [string, fret] (the
+ * reference placement); `strings`, `lo`/`hi` (fret window) and `root` describe the box so it can be
+ * slid to any key (see placePosition). The three boxes are one fingering: E and A are the same shape a
+ * string apart, and D moves its B-string notes up a fret.
  */
-export const CHAPTERS = [
-  { id: 'one', name: 'One string', desc: 'One octave along a single string',
-    shape: 'string', root: [4, 1],
-    notes: [[4, 1], [4, 3], [4, 5], [4, 6], [4, 8], [4, 10], [4, 12], [4, 13]] },
-  { id: 'pA', name: 'Pattern I', desc: 'Root on the A string (C major: 3rd fret)',
-    shape: 'box', strings: [1, 2, 3], lo: 2, hi: 5, root: [1, 3],
-    notes: [[1, 3], [1, 5], [2, 2], [2, 3], [2, 5], [3, 2], [3, 4], [3, 5]] },
-  { id: 'pB', name: 'Pattern II', desc: 'Root on the low E string (C major: 8th fret)',
+export const POSITIONS = [
+  { id: 'E', name: 'E string', desc: 'Root on the low E string',
     shape: 'box', strings: [0, 1, 2], lo: 7, hi: 10, root: [0, 8],
     notes: [[0, 8], [0, 10], [1, 7], [1, 8], [1, 10], [2, 7], [2, 9], [2, 10]] },
-  { id: 'pC', name: 'Pattern III', desc: 'Higher octave, root on the D string (C major: 10th fret)',
+  { id: 'A', name: 'A string', desc: 'Root on the A string',
+    shape: 'box', strings: [1, 2, 3], lo: 2, hi: 5, root: [1, 3],
+    notes: [[1, 3], [1, 5], [2, 2], [2, 3], [2, 5], [3, 2], [3, 4], [3, 5]] },
+  { id: 'D', name: 'D string', desc: 'Root on the D string',
     shape: 'box', strings: [2, 3, 4], lo: 9, hi: 13, root: [2, 10],
     notes: [[2, 10], [2, 12], [3, 9], [3, 10], [3, 12], [4, 10], [4, 12], [4, 13]] },
-  { id: 'neck', name: 'Whole neck', desc: 'Any position: answer with the same pitch anywhere on the neck',
+  { id: 'neck', name: 'Whole neck', desc: 'The same pitch anywhere up to the 12th fret',
     shape: 'neck', notes: [] },
 ];
+export const DEFAULT_POSITION = 'A';
 
-/** Legacy: the number of build-up levels (Do·Re … Do–Do') every pattern chapter starts with. */
-export const LEVELS_PER_CHAPTER = 7;
 export const ROUNDS = 10;
 export const PASS_SCORE = 8;
 
 export const midiOf = ([string, fret]) => OPEN[string] + fret;
 
-/** Legacy: degree indexes (0-based) of build-up level `level`: level 0 → Do·Re, level 6 → Do…Do'. */
-export const levelDegrees = (level) => Array.from({ length: level + 2 }, (_, i) => i);
-
-export const chapterById = (id) => CHAPTERS.find((c) => c.id === id);
+export const positionById = (id) => POSITIONS.find((p) => p.id === id);
 
 // ---------- note names and colours (by semitone offset) ----------
 
@@ -55,11 +48,11 @@ const mod12 = (n) => ((n % 12) + 12) % 12;
 export const SCALES = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10] };
 
 /**
- * Movable-do names for the 12 semitones. Scale notes keep the app's names (Do Re Mi Fa Sol La Si);
- * the chromatic notes are the "flat" syllables Ra Me Se Le Te, so every name is one distinct word.
- * Natural minor reads Do Re Me Fa Sol Le Te.
+ * Names for the 12 semitones: each note is its interval above the root. The notes outside the major
+ * scale are written as flats, so natural minor reads 1 2 ♭3 4 5 ♭6 ♭7.
  */
-export const SEMI_NAMES = ['Do', 'Ra', 'Re', 'Me', 'Mi', 'Fa', 'Se', 'Sol', 'Le', 'La', 'Te', 'Si'];
+export const DEGREE_NAMES = ['1', '♭2', '2', '♭3', '3', '4', '♭5', '5', '♭6', '6', '♭7', '7'];
+const DEGREE_WORDS = ['root', 'flat second', 'second', 'flat third', 'third', 'fourth', 'flat fifth', 'fifth', 'flat sixth', 'sixth', 'flat seventh', 'seventh'];
 const SHARP_LETTERS = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
 const FLAT_LETTERS = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
 
@@ -73,7 +66,10 @@ export const SEMI_COLORS = Array.from({ length: 12 }, (_, pc) => {
 });
 
 const ticks = (offset) => "'".repeat(Math.floor(offset / 12));
-export const solfegeName = (offset) => SEMI_NAMES[mod12(offset)] + ticks(offset);
+/** "1", "♭3", "5"; a tick per octave above the first: 1' is the octave, ♭3' the flat third above it. */
+export const degreeName = (offset) => DEGREE_NAMES[mod12(offset)] + ticks(offset);
+/** The name in words, for tips, speech and screen readers: "flat third". A root above the lowest one is the "octave". */
+export const degreeWord = (offset) => (offset > 0 && mod12(offset) === 0 ? 'octave' : DEGREE_WORDS[mod12(offset)]);
 export const noteColor = (offset) => (offset > 0 && offset % 12 === 0 ? DEGREE_COLORS[7] : SEMI_COLORS[mod12(offset)]);
 
 /** Flats for F B♭ E♭ A♭ D♭ major and their relative minors. */
@@ -86,8 +82,8 @@ export const keyLetter = (keyPc, mode = 'major') => letters(keyPc, mode)[keyPc];
 
 /**
  * Value stored as heard/answered in the answer log. Scale degrees of the first octave keep their
- * old meaning (0–7: Do … Do', counted in the level's own mode); every other note, i.e. a chromatic
- * note or one beyond the first octave, is 8 + its offset, so values stay unique per pitch.
+ * old meaning (0–7: the root … the octave, counted in the level's own mode); every other note, i.e. a
+ * chromatic note or one beyond the first octave, is 8 + its offset, so values stay unique per pitch.
  */
 export function degreeIndex(offset, mode) {
   if (offset === 12) return 7;
@@ -95,7 +91,7 @@ export function degreeIndex(offset, mode) {
   return i >= 0 ? i : 8 + offset;
 }
 
-// ---------- placing a chapter's pattern in any key ----------
+// ---------- placing a position in any key ----------
 
 export const MIN_MIDI = SAMPLE_RANGE[0]; // lowest recorded sample, E2
 export const MAX_MIDI = SAMPLE_RANGE[1]; // highest, E5 (= 12th fret of the high e string)
@@ -103,25 +99,18 @@ export const MAX_FRET = 17;
 const NECK_FRETS = 12;
 
 /**
- * Where a chapter sits for a key: { tonic (midi of Do), strings, lo, hi (fret window of the pattern),
- * frame ({lo,hi} fret columns to draw), neck }. Patterns are the C major shapes slid along the neck
+ * Where a position sits for a key: { tonic (midi of the root), strings, lo, hi (fret window of the
+ * box), frame ({lo,hi} fret columns to draw), neck }. A box is the C major shape slid along the neck
  * by the smallest shift that keeps every fret, including the one-fret margin used for chromatic
- * notes, between 0 and MAX_FRET and below the top sample. The one-string chapter moves to another
- * string when the octave would not fit the neck.
+ * notes, between 0 and MAX_FRET and below the top sample.
  */
-export function placeChapter(chapterId, keyPc) {
-  const c = chapterById(chapterId);
+export function placePosition(positionId, keyPc) {
+  const c = positionById(positionId);
   if (c.shape === 'neck') {
     return {
       tonic: MIN_MIDI + mod12(keyPc - MIN_MIDI), strings: [0, 1, 2, 3, 4, 5], lo: 0, hi: NECK_FRETS,
       frame: { lo: 0, hi: NECK_FRETS }, neck: true,
     };
-  }
-  if (c.shape === 'string') {
-    for (const s of [4, 3, 2, 1, 0]) {
-      const rf = mod12(keyPc - OPEN[s]);
-      if (rf <= 5) return { tonic: OPEN[s] + rf, strings: [s], lo: rf, hi: rf + 12, frame: { lo: Math.max(0, rf - 1), hi: rf + 13 }, neck: false };
-    }
   }
   const top = Math.max(...c.strings);
   let best = null;
@@ -130,7 +119,7 @@ export function placeChapter(chapterId, keyPc) {
     if (c.lo + t - 1 < 0 || c.hi + t + 1 > MAX_FRET || OPEN[top] + c.hi + t + 1 > MAX_MIDI) continue;
     if (best === null || Math.abs(t) < Math.abs(best)) best = t;
   }
-  if (best === null) throw new Error(`no placement for ${chapterId} in key ${keyPc}`);
+  if (best === null) throw new Error(`no placement for ${positionId} in key ${keyPc}`);
   const t = best;
   return {
     tonic: OPEN[c.root[0]] + c.root[1] + t, strings: c.strings, lo: c.lo + t, hi: c.hi + t,
@@ -140,7 +129,7 @@ export function placeChapter(chapterId, keyPc) {
 
 /**
  * Fretboard positions [string, fret] where `midi` can be played in a placement.
- * Whole neck: every position up to the 12th fret. A pattern: the one inside its fret window, or
+ * Whole neck: every position up to the 12th fret. A box: the one inside its fret window, or
  * failing that the nearest to it within one fret (the chromatic notes the scale shape lacks).
  */
 export function positionsOf(place, midi) {
@@ -155,7 +144,7 @@ export function positionsOf(place, midi) {
   return all.slice(0, 1);
 }
 
-// ---------- resolution to Do ----------
+// ---------- resolution to the root ----------
 
 function walk(offset, mode, up) {
   const scale = SCALES[mode] || SCALES.major;
@@ -173,9 +162,9 @@ function walk(offset, mode, up) {
 }
 
 /**
- * Offsets (semitones above the tonic) from `offset` stepwise to the nearest Do, the note itself
- * first. Notes from Sol up resolve upward, the rest downward; a chromatic note first moves to its
- * neighbour in that direction. With `tonic` (MIDI of Do) given, a path that would leave
+ * Offsets (semitones above the tonic) from `offset` stepwise to the nearest root, the note itself
+ * first. Notes from the fifth up resolve upward, the rest downward; a chromatic note first moves to
+ * its neighbour in that direction. With `tonic` (MIDI of the root) given, a path that would leave
  * [MIN_MIDI, MAX_MIDI] is replaced by the one in the other direction.
  */
 export function resolutionOf(offset, mode = 'major', tonic = null) {
@@ -205,97 +194,80 @@ export function cadenceFor(keyPc, mode) {
 
 // ---------- the level model ----------
 
+/** The stages of the ladder, in order. `mode: null` draws major or minor on every attempt. */
 export const FAMILIES = {
   major: { name: 'Major scale', mode: 'major', chromatic: false },
   majorChrom: { name: 'Major with chromatic notes', mode: 'major', chromatic: true },
   minor: { name: 'Minor scale', mode: 'minor', chromatic: false },
   minorChrom: { name: 'Minor with chromatic notes', mode: 'minor', chromatic: true },
-  random: { name: 'Random key', mode: null, chromatic: false },
-  pairs: { name: 'Degree pairs', mode: 'major', chromatic: false },
-  dictation: { name: 'Dictation', mode: 'major', chromatic: false },
-  sing: { name: 'Sing and find', mode: 'major', chromatic: false },
+  all: { name: 'Any note', mode: null, chromatic: true },
 };
 
-/** Note ranges as semitone spans above the tonic. `to: Infinity` runs to the top of the samples. */
-const RANGES = [
-  { id: '1st', name: 'First half', from: 0, to: 6 },
-  { id: '2nd', name: 'Second half', from: 6, to: 12 },
-  { id: 'oct', name: 'Whole octave', from: 0, to: 12 },
-  { id: '2oct', name: 'Two octaves', from: 0, to: 24, neckOnly: true },
-  { id: 'all', name: 'Many octaves', from: 0, to: Infinity, neckOnly: true },
-];
-
-const LENGTH_NAMES = ['Two', 'Three', 'Four', 'Five'];
-
 /**
- * The seven build-up levels of a pattern chapter, triad first: Do·Sol, Do·Mi·Sol, Do·Re·Mi·Sol, then
- * the scale grows upwards. `notes` (explicit offsets) replaces the from/to span; `newest` is the
- * offset of the note just added. Levels 3-6 keep the ids `<chapter>-<n>`, 0-2 are `<chapter>-t<n>`.
+ * Level spec: { id, idx (index in LEVELS), family, name, tag, title, mode ('major'|'minor'|null),
+ * random (null: the player's chosen key | 'major' | 'minor' | 'any': the key, and for 'any' the mode,
+ * are drawn on every attempt), chromatic, from, to (semitone span above the tonic; `to: Infinity` runs
+ * to the top of the samples) or an explicit `notes` list of offsets, newest? (the offset the level
+ * adds: it is introduced on the explore screen and dealt more often), len? (notes per round, dictation
+ * only; absent = 1), neck (true: more than one octave, always answered on the whole neck) }.
+ *
+ * One ladder. The major scale is built up in a fixed key, triad first; from the whole octave on, every
+ * level draws a new key on each attempt.
  */
-const BUILD_UP = [
-  { id: 't0', notes: [0, 7], newest: 7, name: 'Do · Sol' },
-  { id: 't1', notes: [0, 4, 7], newest: 4, name: 'Do · Mi · Sol', tag: 'The triad' },
-  { id: 't2', notes: [0, 2, 4, 7], newest: 2, name: 'Do · Re · Mi · Sol' },
-  { from: 0, to: 7, newest: 5, name: 'Do – Sol', tag: 'First half' },
-  { from: 0, to: 9, newest: 9, name: 'Do – La' },
-  { from: 0, to: 11, newest: 11, name: 'Do – Si' },
-  { from: 0, to: 12, newest: 12, name: "Do – Do'", tag: 'Whole octave' },
-];
-
-/**
- * Level spec: { id, idx, chapterId, family, name, tag, title, mode ('major'|'minor'|null), random
- * (null | 'major' | 'minor' | 'any': key, and for 'any' the mode, are drawn on every attempt),
- * chromatic, from, to (or an explicit `notes` list of offsets), grow? + newest? (build-up levels: the offset just added), len? (notes per round, pairs and dictation families only; absent = 1) }. The first seven levels of every pattern chapter are the
- * build-up levels (see BUILD_UP).
- */
-function levelsOf(chapter) {
+function buildLevels() {
   const out = [];
-  const ch = chapter.id;
-  const neck = chapter.shape === 'neck';
-  const add = (family, spec) => out.push({
-    chapterId: ch, family, chromatic: FAMILIES[family].chromatic, random: null, mode: FAMILIES[family].mode,
-    tag: '', title: `${FAMILIES[family].name} · ${spec.name}`, ...spec,
-  });
-  const ranges = RANGES.filter((r) => neck || !r.neckOnly);
-  for (const family of ['major', 'majorChrom', 'minor', 'minorChrom']) {
-    if (family === 'major' && !neck) {
-      for (let l = 0; l < LEVELS_PER_CHAPTER; l++) {
-        add('major', { ...BUILD_UP[l], id: BUILD_UP[l].id ? `${ch}-${BUILD_UP[l].id}` : `${ch}-${l}`, grow: l });
-      }
-      add('major', { id: `${ch}-major-2nd`, from: 6, to: 12, name: 'Second half' });
-    } else {
-      for (const r of ranges) add(family, { id: `${ch}-${family}-${r.id}`, from: r.from, to: r.to, name: r.name });
-    }
-  }
-  add('random', { id: `${ch}-rk-major`, mode: 'major', random: 'major', from: 0, to: 12, name: 'Major, one octave' });
-  add('random', { id: `${ch}-rk-minor`, mode: 'minor', random: 'minor', from: 0, to: 12, name: 'Minor, one octave' });
-  if (neck) add('random', { id: `${ch}-rk-all`, mode: null, random: 'any', from: 0, to: Infinity, name: 'Major or minor, many octaves' });
-  // Sequence levels: `len` target notes per round, answered note by note (see phrase.js).
-  add('pairs', { id: `${ch}-pairs-1st`, len: 2, from: 0, to: 6, name: 'First half' });
-  add('pairs', { id: `${ch}-pairs-oct`, len: 2, from: 0, to: 12, name: 'Whole octave' });
-  add('pairs', { id: `${ch}-pairs-minor`, len: 2, from: 0, to: 12, mode: 'minor', name: 'Minor, whole octave' });
-  add('pairs', { id: `${ch}-pairs-rk`, len: 2, from: 0, to: 12, mode: 'major', random: 'major', name: 'Random key' });
-  LENGTH_NAMES.forEach((w, i) => add('dictation', { id: `${ch}-dict-${i + 2}`, len: i + 2, from: 0, to: 12, name: `${w} notes` }));
-  add('dictation', { id: `${ch}-dict-minor`, len: 4, from: 0, to: 12, mode: 'minor', name: 'Minor, four notes' });
-  add('dictation', { id: `${ch}-dict-rk`, len: 4, from: 0, to: 12, mode: 'major', random: 'major', name: 'Random key, four notes' });
-  // Sing and find: the target is shown as text; sing it, then find it (single degrees, then phrases).
-  add('sing', { id: `${ch}-sing-1`, from: 0, to: 4, name: 'Do · Re · Mi' });
-  add('sing', { id: `${ch}-sing-2`, from: 0, to: 7, name: 'Do – Sol' });
-  add('sing', { id: `${ch}-sing-oct`, from: 0, to: 12, name: 'Whole octave' });
-  add('sing', { id: `${ch}-sing-p2`, len: 2, from: 0, to: 12, name: 'Two notes' });
-  add('sing', { id: `${ch}-sing-p3`, len: 3, from: 0, to: 12, name: 'Three notes' });
-  add('sing', { id: `${ch}-sing-rk`, len: 3, from: 0, to: 12, mode: 'major', random: 'major', name: 'Random key, three notes' });
+  const add = (family, id, spec) => {
+    const f = FAMILIES[family];
+    out.push({
+      family, mode: f.mode, chromatic: f.chromatic, random: f.mode ?? 'any', tag: '', neck: false,
+      title: `${f.name} · ${spec.name}`, ...spec, id: `${family}-${id}`,
+    });
+  };
+  const octave = { from: 0, to: 12 };
+  const twoOctaves = { from: 0, to: 24, name: 'Two octaves', neck: true };
+  const dictation = (family) => {
+    add(family, 'dict-2', { ...octave, len: 2, name: 'Two-note phrases', tag: 'Dictation' });
+    add(family, 'dict-4', { ...octave, len: 4, name: 'Four-note phrases', tag: 'Dictation' });
+  };
+  const chromatic = (family) => {
+    add(family, '1st', { from: 0, to: 6, name: 'First half' });
+    add(family, '2nd', { from: 6, to: 12, name: 'Second half' });
+    add(family, 'oct', { ...octave, name: 'Whole octave' });
+    add(family, '2oct', { ...twoOctaves });
+    dictation(family);
+  };
+
+  add('major', 't0', { notes: [0, 7], newest: 7, name: '1 · 5', random: null });
+  add('major', 't1', { notes: [0, 4, 7], newest: 4, name: '1 · 3 · 5', tag: 'The triad', random: null });
+  add('major', 't2', { notes: [0, 2, 4, 7], newest: 2, name: '1 · 2 · 3 · 5', random: null });
+  add('major', '3', { from: 0, to: 7, newest: 5, name: '1 – 5', tag: 'First half', random: null });
+  add('major', '4', { from: 0, to: 9, newest: 9, name: '1 – 6', random: null });
+  add('major', '5', { from: 0, to: 11, newest: 11, name: '1 – 7', random: null });
+  add('major', '6', { ...octave, newest: 12, name: 'Whole octave', random: null });
+  add('major', 'rk', { ...octave, name: 'Whole octave, any key' });
+  add('major', '2oct', { ...twoOctaves });
+  dictation('major');
+
+  chromatic('majorChrom');
+
+  add('minor', 't', { notes: [0, 3, 7], newest: 3, name: '1 · ♭3 · 5', tag: 'The minor triad' });
+  add('minor', '5', { from: 0, to: 7, name: '1 – 5', tag: 'First half' });
+  add('minor', '6', { from: 0, to: 8, newest: 8, name: '1 – ♭6' });
+  add('minor', 'oct', { ...octave, newest: 10, name: 'Whole octave' });
+  add('minor', '2oct', { ...twoOctaves });
+  dictation('minor');
+
+  chromatic('minorChrom');
+
+  add('all', 'neck', { from: 0, to: Infinity, name: 'Any octave, major or minor', neck: true });
   return out.map((l, idx) => ({ ...l, idx }));
 }
 
-const LEVEL_CACHE = new Map();
-/** All levels of a chapter, in display order. Index 0–6 are the original build-up levels. */
-export function levelsFor(chapterId) {
-  if (!LEVEL_CACHE.has(chapterId)) LEVEL_CACHE.set(chapterId, levelsOf(chapterById(chapterId)));
-  return LEVEL_CACHE.get(chapterId);
-}
+/** Every level, in ladder order. */
+export const LEVELS = buildLevels();
+export const levelById = (id) => LEVELS.find((l) => l.id === id) ?? null;
 
-/** The note a growing level just added (its `newest`), else the top of the pool. */
+/** The note a level adds (its `newest`), else the top of the pool. */
 export const newestOf = (level, pool) => (pool.includes(level.newest) ? level.newest : pool[pool.length - 1]);
 
 /** Pick the key (and mode) for an attempt: fixed levels use `keyPc`, random ones draw. */
@@ -311,7 +283,7 @@ const MIN_CELLS = 4;
 
 /**
  * The fret columns to draw for the notes of a level: just the frets they use (so a phone shows a
- * short board, not the whole pattern), widened to MIN_CELLS inside the placement's own window.
+ * short board, not the whole box), widened to MIN_CELLS inside the placement's own window.
  * A dot on fret `lo` sits before the first wire, as an open string does before the nut.
  */
 export function frameOf(place, positions) {
@@ -329,11 +301,14 @@ export function frameOf(place, positions) {
 
 /**
  * Everything the UI needs to run a level in a key: the ascending note ids (`pool`, offsets from the
- * tonic), their fretboard positions, the fret frame around them, and the cadence.
- * `multiOctave` is true when notes of the same name occur in several octaves.
+ * tonic), their fretboard positions, the fret frame around them, and the cadence. `positionId` is the
+ * player's choice; a level of more than one octave is placed on the whole neck whatever it is
+ * (`positionId` in the result is the one used). `multiOctave` is true when notes of the same name
+ * occur in several octaves.
  */
-export function buildContext(chapterId, level, keyPc, mode) {
-  const place = placeChapter(chapterId, keyPc);
+export function buildContext(positionId, level, keyPc, mode) {
+  const used = level.neck ? 'neck' : positionId;
+  const place = placePosition(used, keyPc);
   const positions = new Map();
   const pool = [];
   const maxOffset = MAX_MIDI - place.tonic;
@@ -347,7 +322,7 @@ export function buildContext(chapterId, level, keyPc, mode) {
     positions.set(o, pos);
   }
   return {
-    chapterId, level, keyPc, mode, tonic: place.tonic, frame: frameOf(place, [...positions.values()].flat()), pool, positions,
+    positionId: used, level, keyPc, mode, tonic: place.tonic, frame: frameOf(place, [...positions.values()].flat()), pool, positions,
     multiOctave: pool[pool.length - 1] - pool[0] > 12, cadence: cadenceFor(keyPc, mode),
   };
 }
