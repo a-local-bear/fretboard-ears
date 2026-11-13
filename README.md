@@ -6,8 +6,9 @@ The goal is to learn intervals by ear and play what you can sing, then hear the 
 
 **Open the app:** https://a-local-bear.github.io/fretboard-ears/ (installable, works offline)
 
-The site opens on a main menu with two apps: **Ear training** (below) and **Songcraft**, which teaches
-writing chord progressions and riffs (see [Songcraft](#songcraft)).
+The site opens on a main menu with three apps: **Ear training** (below), **Songcraft**, which teaches
+writing chord progressions and riffs (see [Songcraft](#songcraft)), and **Woozy**, a bedroom-pop songwriting
+course and studio (see [Woozy](#woozy)).
 
 ## What's in it
 
@@ -36,6 +37,20 @@ A second app in `songcraft/`, sharing the fonts, styles and guitar samples: http
 - **Riff lab**: a step grid over your chords that marks which notes fit each chord, idea generators in three styles,
   a checklist of the rules the lessons teach, and the riff as tab and on the neck.
 - Each lesson ends with a **challenge** checked live in the builder or the lab.
+
+## Woozy
+
+A third app in `woozy/`: https://a-local-bear.github.io/fretboard-ears/woozy/
+
+- **A course** of 27 lessons in 8 modules on bedroom-pop and indie writing: keys and numbers, seventh chords and movable
+  shapes, vamps, ii–V–I, Dorian, borrowed and chromatic chords, extensions and voice leading, strumming and feel,
+  melody, song form, and style studies, each with playable examples, guitar tasks and a quiz.
+- **Studio**: write songs section by section, with chords, voicings, a melody grid, tab, lyrics, band playback and a
+  coach. Songs and progress are saved in the browser.
+- **Cookbook** of 45 progressions by mood, a chord library and scales & keys.
+
+It synthesises its own guitar, bass and drums, so it shares nothing but the site. It also runs on its own with a small
+sync server, from its original project; here it is the static part only, and its tests are in `tests/woozy/`.
 
 ## Run locally
 
