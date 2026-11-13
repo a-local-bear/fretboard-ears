@@ -90,7 +90,7 @@ def png(w, h, raw):
 
 
 def main():
-    out = Path(__file__).resolve().parent.parent / 'icons'
+    out = Path(__file__).resolve().parent.parent / 'site' / 'icons'
     out.mkdir(exist_ok=True)
     jobs = [
         ('icon-192.png', 192, True, 1.0),

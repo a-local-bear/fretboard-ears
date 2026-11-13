@@ -1,0 +1,38 @@
+/* The main menu. It looks like the ear trainer and borrows its typeface. */
+@font-face {
+  font-family: "Manrope";
+  src: url("ear-training/fonts/manrope-latin-wght-normal.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+}
+:root {
+  color-scheme: dark;
+  --line: #262626;
+  --muted: #8a8a8a;
+  --accent: #c8ff2e;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0 auto;
+  max-width: 1012px;
+  background: #000;
+  color: #fff;
+  font: 500 16px/1.45 "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px)) 40px max(16px, env(safe-area-inset-left, 0px));
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+header { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 8px; padding: 14px 0 6px; }
+h1 { margin: 0; text-align: center; font-size: 22px; font-weight: 700; line-height: 1.2; letter-spacing: -0.02em; }
+.mark { width: 44px; height: 44px; display: grid; place-items: center; }
+.mark::before { content: ""; width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--accent); }
+main { display: flex; flex-direction: column; gap: 20px; padding-top: 12px; }
+.lede { margin: 0; color: var(--muted); text-align: center; text-wrap: balance; }
+.apps { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.apps a { display: grid; grid-template-columns: 40px 1fr; gap: 14px; align-items: center; padding: 18px 4px; border-bottom: 1px solid var(--line); color: inherit; text-decoration: none; }
+.apps a:hover .name { color: var(--accent); }
+.num { font: 500 14px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.08em; color: var(--accent); }
+.body { display: flex; flex-direction: column; }
+.name { font-weight: 700; font-size: 18px; letter-spacing: -0.01em; }
+.desc { color: var(--muted); font-size: 14px; }
+@media (max-width: 480px) { h1 { font-size: 19px; } }
